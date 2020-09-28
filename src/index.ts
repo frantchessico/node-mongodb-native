@@ -1,5 +1,5 @@
 import { Instrumentation } from './apm';
-import { Cursor, AggregationCursor, CommandCursor } from './cursor';
+import { Cursor, AggregationCursor } from './cursor';
 import { PromiseProvider } from './promise_provider';
 import { Admin } from './admin';
 import { MongoClient } from './mongo_client';
@@ -74,7 +74,6 @@ export {
   ReadPreference,
   Logger,
   AggregationCursor,
-  CommandCursor,
   Cursor,
   GridFSBucket
 };
@@ -146,7 +145,6 @@ export type { QueryOptions } from './cmap/wire_protocol/query';
 export type { CollationOptions, WriteCommandOptions } from './cmap/wire_protocol/write_command';
 export type { CollectionPrivate, CollectionOptions } from './collection';
 export type { AggregationCursorOptions } from './cursor/aggregation_cursor';
-export type { CommandCursorOptions } from './cursor/command_cursor';
 export type {
   CursorCloseOptions,
   DocumentTransforms,

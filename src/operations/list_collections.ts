@@ -6,6 +6,9 @@ import type { Document } from '../bson';
 import type { Server } from '../sdam/server';
 import type { Db } from '../db';
 import type { DocumentTransforms } from '../cursor/cursor';
+import { AbstractCursor, ExecutionResult } from '../cursor/abstract_cursor';
+import type { ClientSession } from '../sessions';
+import { executeOperation } from './execute_operation';
 
 const LIST_COLLECTIONS_WIRE_VERSION = 3;
 
@@ -40,7 +43,7 @@ export class ListCollectionsOperation extends CommandOperation<ListCollectionsOp
   nameOnly: boolean;
   batchSize?: number;
 
-  constructor(db: Db, filter: Document, options: ListCollectionsOptions) {
+  constructor(db: Db, filter: Document, options?: ListCollectionsOptions) {
     super(db, options);
 
     this.db = db;
@@ -103,6 +106,39 @@ export class ListCollectionsOperation extends CommandOperation<ListCollectionsOp
     };
 
     return super.executeCommand(server, command, callback);
+  }
+}
+
+export class ListCollectionsCursor extends AbstractCursor {
+  parent: Db;
+  filter: Document;
+  options?: ListCollectionsOptions;
+
+  constructor(db: Db, filter: Document, options?: ListCollectionsOptions) {
+    super(db.s.topology, options);
+    this.parent = db;
+    this.filter = filter;
+    this.options = options;
+  }
+
+  _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
+    const operation = new ListCollectionsOperation(this.parent, this.filter, {
+      session,
+      ...this.options
+    });
+
+    executeOperation(this.topology, operation, (err, response) => {
+      if (err || response == null) return callback(err);
+
+      // NOTE: `executeOperation` should be improved to allow returning an intermediate
+      //       representation including the selected server, session, and server response.
+      callback(undefined, {
+        namespace: operation.ns,
+        server: operation.server,
+        session,
+        response
+      });
+    });
   }
 }
 

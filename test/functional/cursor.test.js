@@ -51,14 +51,13 @@ describe('Cursor', function () {
                 expect(err).to.not.exist;
 
                 // Should fail if called again (cursor should be closed)
-                cursor.each((err, item) => {
-                  expect(err).to.not.exist;
-
-                  // Let's close the db
-                  if (!item) {
+                cursor.forEach(
+                  () => {},
+                  err => {
+                    expect(err).to.not.exist;
                     done();
                   }
-                });
+                );
               });
             });
           });
@@ -230,17 +229,18 @@ describe('Cursor', function () {
                         expect(err).to.not.exist;
                         test.equal(10, count);
 
-                        cursor.each((err, item) => {
-                          expect(err).to.not.exist;
-                          if (item == null) {
-                            cursor.count(function (err, count2) {
+                        cursor.forEach(
+                          () => {},
+                          err => {
+                            expect(err).to.not.exist;
+                            cursor.count((err, count2) => {
                               expect(err).to.not.exist;
-                              test.equal(10, count2);
-                              test.equal(count, count2);
+                              expect(count2).to.equal(10);
+                              expect(count2).to.equal(count);
                               done();
                             });
                           }
-                        });
+                        );
                       });
                     });
                   });
@@ -349,17 +349,18 @@ describe('Cursor', function () {
                         expect(err).to.not.exist;
                         test.equal(10, count);
 
-                        cursor.each((err, item) => {
-                          expect(err).to.not.exist;
-                          if (item == null) {
-                            cursor.count(function (err, count2) {
+                        cursor.forEach(
+                          () => {},
+                          err => {
+                            expect(err).to.not.exist;
+                            cursor.count((err, count2) => {
                               expect(err).to.not.exist;
-                              test.equal(10, count2);
-                              test.equal(count, count2);
+                              expect(count2).to.equal(10);
+                              expect(count2).to.equal(count);
                               done();
                             });
                           }
-                        });
+                        );
                       });
                     });
                   });
@@ -509,7 +510,7 @@ describe('Cursor', function () {
             const cursor = collection.find();
 
             test.throws(function () {
-              cursor.each();
+              cursor.forEach();
             });
 
             done();
@@ -1451,11 +1452,12 @@ describe('Cursor', function () {
             });
 
             var total = 0;
-            collection.find({}, {}).each((err, item) => {
-              expect(err).to.not.exist;
-              if (item != null) {
+            collection.find({}, {}).forEach(
+              item => {
                 total = total + item.a;
-              } else {
+              },
+              err => {
+                expect(err).to.not.exist;
                 test.equal(499500, total);
 
                 collection.count((err, count) => {
@@ -1468,11 +1470,12 @@ describe('Cursor', function () {
                   test.equal(COUNT, count);
 
                   var total2 = 0;
-                  collection.find().each((err, item) => {
-                    expect(err).to.not.exist;
-                    if (item != null) {
+                  collection.find().forEach(
+                    item => {
                       total2 = total2 + item.a;
-                    } else {
+                    },
+                    err => {
+                      expect(err).to.not.exist;
                       test.equal(499500, total2);
                       collection.count((err, count) => {
                         expect(err).to.not.exist;
@@ -1481,10 +1484,10 @@ describe('Cursor', function () {
                         done();
                       });
                     }
-                  });
+                  );
                 });
               }
-            });
+            );
           }
 
           insert(function () {
@@ -1531,11 +1534,12 @@ describe('Cursor', function () {
             });
 
             var total = 0;
-            collection.find().each((err, item) => {
-              expect(err).to.not.exist;
-              if (item != null) {
-                total = total + item.a;
-              } else {
+            collection.find().forEach(
+              doc => {
+                total = total + doc.a;
+              },
+              err => {
+                expect(err).to.not.exist;
                 test.equal(499500, total);
 
                 collection.count((err, count) => {
@@ -1548,23 +1552,25 @@ describe('Cursor', function () {
                   test.equal(1000, count);
 
                   var total2 = 0;
-                  collection.find().each((err, item) => {
-                    expect(err).to.not.exist;
-                    if (item != null) {
-                      total2 = total2 + item.a;
-                    } else {
-                      test.equal(499500, total2);
+                  collection.find().forEach(
+                    doc => {
+                      total2 = total2 + doc.a;
+                    },
+                    err => {
+                      expect(err).to.not.exist;
+                      expect(total2).to.equal(499500);
+
                       collection.count((err, count) => {
                         expect(err).to.not.exist;
-                        test.equal(1000, count);
-                        test.equal(total, total2);
+                        expect(count).to.equal(1000);
+                        expect(total2).to.equal(total);
                         done();
                       });
                     }
-                  });
+                  );
                 });
               }
-            });
+            );
           }
 
           insert(function () {
@@ -1720,19 +1726,20 @@ describe('Cursor', function () {
             cursor.count(err => {
               expect(err).to.not.exist;
               // Ensure each returns all documents
-              cursor.each((err, item) => {
-                expect(err).to.not.exist;
-                if (item != null) {
+              cursor.forEach(
+                () => {
                   total++;
-                } else {
-                  cursor.count(function (err, c) {
+                },
+                err => {
+                  expect(err).to.not.exist;
+                  cursor.count((err, c) => {
                     expect(err).to.not.exist;
-                    test.equal(1000, c);
-                    test.equal(1000, total);
+                    expect(c).to.equal(1000);
+                    expect(total).to.equal(1000);
                     done();
                   });
                 }
-              });
+              );
             });
           });
         });
@@ -2182,17 +2189,16 @@ describe('Cursor', function () {
               this.defer(() => cursor.close());
 
               // Execute each
-              cursor.each((err, result) => {
-                if (result) {
+              cursor.forEach(
+                () => {
                   cursor.kill();
-                }
-
-                if (err != null) {
+                },
+                () => {
                   // Even though cursor is exhausted, should not close session
                   // unless cursor is manually closed, due to awaitData / tailable
                   done();
                 }
-              });
+              );
             });
           }
         );
@@ -2231,13 +2237,15 @@ describe('Cursor', function () {
             called = true;
           };
 
-          cursor.each(err => {
-            if (err != null) {
+          cursor.forEach(
+            () => {},
+            err => {
+              expect(err).to.exist;
               test.ok(called);
               cursor.rewind = rewind;
               done();
             }
-          });
+          );
         });
       });
     }
@@ -2272,15 +2280,14 @@ describe('Cursor', function () {
 
             cursor.addCursorFlag('tailable', true);
             cursor.addCursorFlag('awaitData', true);
-            cursor.each(err => {
-              if (err != null) {
+            cursor.forEach(
+              () => cursor.kill(),
+              () => {
                 // Even though cursor is exhausted, should not close session
                 // unless cursor is manually closed, due to awaitData / tailable
                 done();
-              } else {
-                cursor.kill();
               }
-            });
+            );
           });
         });
       });
@@ -2302,7 +2309,7 @@ describe('Cursor', function () {
         db.createCollection('should_not_await_data_when_false', options, function(err, collection) {
           collection.insert({a:1}, configuration.writeConcernMax(), function(err, result) {
             // should not timeout
-            collection.find({}, {tailable:true, awaitData:false}).each(function(err, result) {
+            collection.find({}, {tailable:true, awaitData:false}).forEach(function(err, result) {
               test.ok(err != null);
             });
 
@@ -2340,14 +2347,13 @@ describe('Cursor', function () {
 
             // Create cursor with awaitData, and timeout after the period specified
             var cursor = collection.find({}, { tailable: true, awaitData: true });
-            cursor.each(err => {
-              if (err != null) {
+            cursor.forEach(
+              () => cursor.kill(),
+              () => {
                 // kill cursor b/c cursor is tailable / awaitable
                 cursor.close(done);
-              } else {
-                cursor.kill();
               }
-            });
+            );
           });
         });
       });
@@ -2683,15 +2689,16 @@ describe('Cursor', function () {
               totalI = totalI + d.length;
 
               if (left === 0) {
-                collection.find({}).each((err, item) => {
-                  expect(err).to.not.exist;
-                  if (item == null) {
-                    test.equal(30000, total);
-                    done();
-                  } else {
+                collection.find({}).forEach(
+                  () => {
                     total++;
+                  },
+                  err => {
+                    expect(err).to.not.exist;
+                    expect(total).to.equal(30000);
+                    done();
                   }
-                });
+                );
               }
             });
           }
@@ -2828,14 +2835,17 @@ describe('Cursor', function () {
           expect(err).to.not.exist;
 
           const cursor = collection.find({}, { tailable: true });
-          cursor.each(err => {
-            test.ok(err instanceof Error);
-            test.ok(typeof err.code === 'number');
+          cursor.forEach(
+            () => {},
+            err => {
+              test.ok(err instanceof Error);
+              test.ok(typeof err.code === 'number');
 
-            // Close cursor b/c we did not exhaust cursor
-            cursor.close();
-            done();
-          });
+              // Close cursor b/c we did not exhaust cursor
+              cursor.close();
+              done();
+            }
+          );
         });
       });
     }
@@ -2987,17 +2997,19 @@ describe('Cursor', function () {
             expect(err).to.not.exist;
             var finished = false;
 
-            collection.find({}).each(function (err, doc) {
-              expect(err).to.not.exist;
-
-              if (doc) {
+            collection.find({}).forEach(
+              doc => {
+                expect(doc).to.exist;
                 test.equal(finished, false);
                 finished = true;
 
                 done();
                 return false;
+              },
+              err => {
+                expect(err).to.not.exist;
               }
-            });
+            );
           });
         });
       });
@@ -3242,8 +3254,8 @@ describe('Cursor', function () {
             test.equal(10, docs.length);
 
             // Ensure all docs where mapped
-            docs.forEach(function (x) {
-              test.equal(1, x.a);
+            docs.forEach(doc => {
+              expect(doc).property('a').to.equal(1);
             });
 
             done();
@@ -3337,15 +3349,15 @@ describe('Cursor', function () {
             .batchSize(5)
             .limit(10);
 
-          cursor.each(function (err, doc) {
-            expect(err).to.not.exist;
-
-            if (doc) {
+          cursor.forEach(
+            doc => {
               test.equal(1, doc.a);
-            } else {
+            },
+            err => {
+              expect(err).to.not.exist;
               done();
             }
-          });
+          );
         });
       });
     }
@@ -3392,7 +3404,7 @@ describe('Cursor', function () {
             .limit(10);
 
           cursor.forEach(
-            function (doc) {
+            doc => {
               test.equal(4, doc.a);
             },
             err => {
@@ -3443,8 +3455,8 @@ describe('Cursor', function () {
             .limit(10);
 
           cursor.forEach(
-            function (doc) {
-              test.equal(1, doc.a);
+            doc => {
+              expect(doc).property('a').to.equal(1);
             },
             err => {
               expect(err).to.not.exist;
@@ -3528,18 +3540,17 @@ describe('Cursor', function () {
               .addCursorFlag('awaitData', true)
               .maxAwaitTimeMS(500);
 
-            cursor.each(function (err, result) {
-              if (result) {
-                setTimeout(function () {
-                  cursor.kill();
-                }, 300);
-              } else {
+            cursor.forEach(
+              () => {
+                setTimeout(() => cursor.kill(), 300);
+              },
+              () => {
                 test.ok(new Date().getTime() - s.getTime() >= 500);
 
                 // TODO: forced because the cursor is still open/active
                 client.close(true, done);
               }
-            });
+            );
           });
         });
       });

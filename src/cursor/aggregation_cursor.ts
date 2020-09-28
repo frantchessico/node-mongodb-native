@@ -1,9 +1,13 @@
-import { MongoError } from '../error';
-import { Cursor, CursorOptions, CursorState } from './cursor';
-import type { AggregateOperation, AggregateOptions } from '../operations/aggregate';
+import { AggregateOperation, AggregateOptions } from '../operations/aggregate';
+import { AbstractCursor, ExecutionResult } from './abstract_cursor';
+import { executeOperation } from '../operations/execute_operation';
 import type { Document } from '../bson';
 import type { Sort } from '../sort';
 import type { Topology } from '../sdam/topology';
+import type { Callback } from '../utils';
+import type { ClientSession } from '../sessions';
+import type { CursorOptions } from './cursor';
+import type { OperationParent } from '../operations/command';
 
 /** @public */
 export interface AggregationCursorOptions extends CursorOptions, AggregateOptions {}
@@ -15,101 +19,124 @@ export interface AggregationCursorOptions extends CursorOptions, AggregateOption
  * or higher stream
  * @public
  */
-export class AggregationCursor extends Cursor<AggregateOperation, AggregationCursorOptions> {
+export class AggregationCursor extends AbstractCursor {
+  parent: OperationParent; // TEMPORARY
+  pipeline: Document[];
+  options: AggregateOptions;
+
   /** @internal */
   constructor(
+    parent: OperationParent,
     topology: Topology,
-    operation: AggregateOperation,
-    options: AggregationCursorOptions = {}
+    pipeline: Document[] = [],
+    options: AggregateOptions = {}
   ) {
-    super(topology, operation, options);
+    super(topology, options);
+
+    this.parent = parent;
+    this.pipeline = pipeline;
+    this.options = options;
   }
 
-  /** Set the batch size for the cursor. See {@link https://docs.mongodb.com/manual/reference/command/aggregate|aggregation documentation} */
-  batchSize(batchSize: number): this {
-    if (this.s.state === CursorState.CLOSED || this.isDead()) {
-      throw new MongoError('Cursor is closed');
-    }
+  _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
+    const aggregateOperation = new AggregateOperation(this.parent, this.pipeline, {
+      session,
+      ...this.options
+    });
 
-    if (typeof batchSize !== 'number') {
-      throw new MongoError('batchSize requires an integer');
-    }
+    executeOperation(this.topology, aggregateOperation, (err, response) => {
+      if (err || response == null) return callback(err);
 
-    this.operation.options.batchSize = batchSize;
-    this.cursorBatchSize = batchSize;
-    return this;
+      // NOTE: `executeOperation` should be improved to allow returning an intermediate
+      //       representation including the selected server, session, and server response.
+      callback(undefined, {
+        namespace: aggregateOperation.ns,
+        server: aggregateOperation.server,
+        session,
+        response
+      });
+    });
+  }
+
+  /**
+   * Execute the explain for the cursor
+   *
+   * @param callback - The result callback.
+   */
+  explain(): Promise<Document | null>;
+  explain(callback: Callback<Document | null>): void;
+  explain(callback?: Callback<Document | null>): Promise<Document | null> | void {
+    return executeOperation(
+      this.topology,
+      new AggregateOperation(this.parent, this.pipeline, { ...this.options, explain: true }),
+      callback
+    );
   }
 
   /** Add a group stage to the aggregation pipeline */
   group($group: Document): this {
-    this.operation.addToPipeline({ $group });
+    this.pipeline.push({ $group });
     return this;
   }
 
   /** Add a limit stage to the aggregation pipeline */
   limit($limit: number): this {
-    this.operation.addToPipeline({ $limit });
+    this.pipeline.push({ $limit });
     return this;
   }
 
   /** Add a match stage to the aggregation pipeline */
   match($match: Document): this {
-    this.operation.addToPipeline({ $match });
-    return this;
-  }
-
-  /** Add a maxTimeMS stage to the aggregation pipeline */
-  maxTimeMS(maxTimeMS: number): this {
-    this.operation.options.maxTimeMS = maxTimeMS;
+    this.pipeline.push({ $match });
     return this;
   }
 
   /** Add a out stage to the aggregation pipeline */
   out($out: number): this {
-    this.operation.addToPipeline({ $out });
+    this.pipeline.push({ $out });
     return this;
   }
 
   /** Add a project stage to the aggregation pipeline */
   project($project: Document): this {
-    this.operation.addToPipeline({ $project });
+    this.pipeline.push({ $project });
     return this;
   }
 
   /** Add a lookup stage to the aggregation pipeline */
   lookup($lookup: Document): this {
-    this.operation.addToPipeline({ $lookup });
+    this.pipeline.push({ $lookup });
     return this;
   }
 
   /** Add a redact stage to the aggregation pipeline */
   redact($redact: Document): this {
-    this.operation.addToPipeline({ $redact });
+    this.pipeline.push({ $redact });
     return this;
   }
 
   /** Add a skip stage to the aggregation pipeline */
   skip($skip: number): this {
-    this.operation.addToPipeline({ $skip });
+    this.pipeline.push({ $skip });
     return this;
   }
 
   /** Add a sort stage to the aggregation pipeline */
   sort($sort: Sort): this {
-    this.operation.addToPipeline({ $sort });
+    this.pipeline.push({ $sort });
     return this;
   }
 
   /** Add a unwind stage to the aggregation pipeline */
   unwind($unwind: number): this {
-    this.operation.addToPipeline({ $unwind });
+    this.pipeline.push({ $unwind });
     return this;
   }
 
   // deprecated methods
   /** @deprecated Add a geoNear stage to the aggregation pipeline */
   geoNear($geoNear: Document): this {
-    this.operation.addToPipeline({ $geoNear });
+    this.pipeline.push({ $geoNear });
     return this;
   }
 }

@@ -64,14 +64,16 @@ describe('CRUD API', function () {
           var eachMethod = function () {
             var count = 0;
 
-            cursor.each(function (err, doc) {
-              expect(err).to.not.exist;
-              if (doc) count = count + 1;
-              if (doc == null) {
+            cursor.forEach(
+              () => {
+                count = count + 1;
+              },
+              err => {
+                expect(err).to.not.exist;
                 test.equal(2, count);
                 toArrayMethod();
               }
-            });
+            );
           };
 
           //
@@ -223,14 +225,16 @@ describe('CRUD API', function () {
             var count = 0;
             var cursor = db.collection('t1').aggregate();
             cursor.match({ a: 1 });
-            cursor.each(function (err, doc) {
-              expect(err).to.not.exist;
-              if (doc) count = count + 1;
-              if (doc == null) {
+            cursor.forEach(
+              () => {
+                count = count + 1;
+              },
+              err => {
+                expect(err).to.not.exist;
                 test.equal(3, count);
                 testStream();
               }
-            });
+            );
           };
 
           //

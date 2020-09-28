@@ -21,6 +21,7 @@ import type { Cursor } from './cursor/cursor';
 import type { WriteCommandOptions } from './cmap/wire_protocol/write_command';
 import { executeOperation } from './operations/execute_operation';
 import { RunAdminCommandOperation } from './operations/run_command';
+import type { AbstractCursor } from './cursor/abstract_cursor';
 
 const minWireVersionForShardedTransactions = 8;
 
@@ -45,7 +46,7 @@ export interface ClientSessionOptions {
   /** The default TransactionOptions to use for transactions started on this session. */
   defaultTransactionOptions?: TransactionOptions;
 
-  owner: symbol | Cursor;
+  owner: symbol | Cursor | AbstractCursor;
   explicit?: boolean;
   initialClusterTime?: ClusterTime;
 }
@@ -70,7 +71,7 @@ class ClientSession extends EventEmitter {
   clusterTime?: ClusterTime;
   operationTime?: Timestamp;
   explicit: boolean;
-  owner: symbol | Cursor; // TODO - change to AbstractCursor
+  owner: symbol | Cursor | AbstractCursor; // TODO - change to AbstractCursor
   defaultTransactionOptions: TransactionOptions;
   transaction: Transaction;
   [kServerSession]?: ServerSession;

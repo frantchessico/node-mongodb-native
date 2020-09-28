@@ -397,7 +397,7 @@ describe('Aggregation', function () {
     },
 
     test: function (done) {
-      var client = this.configuration.newClient({ w: 1 }, { poolSize: 1 }),
+      var client = this.configuration.newClient({}, { poolSize: 1 }),
         databaseName = this.configuration.db;
 
       // LINE var MongoClient = require('mongodb').MongoClient;
@@ -893,7 +893,7 @@ describe('Aggregation', function () {
 
           try {
             // Execute aggregate, notice the pipeline is expressed as an Array
-            collection.aggregate(
+            const cursor = collection.aggregate(
               [
                 {
                   $project: {
@@ -913,6 +913,8 @@ describe('Aggregation', function () {
                 cursor: 1
               }
             );
+
+            cursor.next();
           } catch (err) {
             client.close(done);
             return;
@@ -925,7 +927,8 @@ describe('Aggregation', function () {
     }
   });
 
-  it('should fail if you try to use explain flag with readConcern/writeConcern', {
+  // NOTE: should be rewritten to verify this with command monitoring
+  it.skip('should fail if you try to use explain flag with readConcern/writeConcern', {
     metadata: {
       requires: {
         mongodb: '>3.6.0',

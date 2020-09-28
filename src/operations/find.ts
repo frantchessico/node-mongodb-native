@@ -67,7 +67,7 @@ export class FindOperation extends CommandOperation<FindOptions, Document> {
   hint?: Hint;
 
   constructor(
-    collection: Collection,
+    collection: Collection | undefined,
     ns: MongoDBNamespace,
     filter: Document = {},
     options: FindOptions = {}

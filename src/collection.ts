@@ -16,8 +16,8 @@ import { OrderedBulkOperation } from './bulk/ordered';
 import { ChangeStream, ChangeStreamOptions } from './change_stream';
 import { WriteConcern, WriteConcernOptions } from './write_concern';
 import { ReadConcern, ReadConcernLike } from './read_concern';
-import { AggregationCursor, CommandCursor, Cursor } from './cursor';
-import { AggregateOperation, AggregateOptions } from './operations/aggregate';
+import { AggregationCursor, Cursor } from './cursor';
+import type { AggregateOptions } from './operations/aggregate';
 import { BulkWriteOperation } from './operations/bulk_write';
 import { CountDocumentsOperation, CountDocumentsOptions } from './operations/count_documents';
 import {
@@ -29,12 +29,12 @@ import {
   IndexesOperation,
   IndexExistsOperation,
   IndexInformationOperation,
-  ListIndexesOperation,
   CreateIndexesOptions,
   DropIndexesOptions,
   ListIndexesOptions,
   IndexSpecification,
-  IndexDescription
+  IndexDescription,
+  ListIndexesCursor
 } from './operations/indexes';
 import { DistinctOperation, DistinctOptions } from './operations/distinct';
 import { DropCollectionOperation, DropCollectionOptions } from './operations/drop';
@@ -87,6 +87,7 @@ import type { PkFactory } from './mongo_client';
 import type { Logger, LoggerOptions } from './logger';
 import type { OperationParent } from './operations/command';
 import type { Sort } from './sort';
+import { FindCursor } from './cursor/find_cursor';
 
 /** @public */
 export interface Collection {
@@ -650,6 +651,25 @@ export class Collection implements OperationParent {
   }
 
   /**
+   * Creates a cursor for a query that can be used to iterate over results from MongoDB
+   *
+   * @param filter - The query predicate. If unspecified, then all documents in the collection will match the predicate
+   */
+  findWithFindCursor(): FindCursor;
+  findWithFindCursor(filter: Document): FindCursor;
+  findWithFindCursor(filter: Document, options: FindOptions): FindCursor;
+  findWithFindCursor(filter?: Document, options?: FindOptions): FindCursor {
+    if (arguments.length > 2) {
+      throw new TypeError('Third parameter to `collection.find()` must be undefined');
+    }
+    if (typeof options === 'function') {
+      throw new TypeError('`options` parameter must not be function');
+    }
+
+    return new FindCursor(getTopology(this), this.s.namespace, filter, options);
+  }
+
+  /**
    * Returns the options of the collection.
    *
    * @param options - Optional settings for the command
@@ -864,15 +884,8 @@ export class Collection implements OperationParent {
    *
    * @param options - Optional settings for the command
    */
-  listIndexes(options?: ListIndexesOptions): CommandCursor {
-    options = resolveOptions(this, options);
-    const cursor = new CommandCursor(
-      getTopology(this),
-      new ListIndexesOperation(this, options),
-      options
-    );
-
-    return cursor;
+  listIndexes(options?: ListIndexesOptions): ListIndexesCursor {
+    return new ListIndexesCursor(this, resolveOptions(this, options));
   }
 
   /**
@@ -1216,11 +1229,12 @@ export class Collection implements OperationParent {
       throw new TypeError('`options` parameter must not be function');
     }
 
-    options = resolveOptions(this, options);
     return new AggregationCursor(
+      this,
       getTopology(this),
-      new AggregateOperation(this, pipeline, options),
-      options
+      this.s.namespace,
+      pipeline,
+      resolveOptions(this, options)
     );
   }
 

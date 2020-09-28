@@ -10,6 +10,9 @@ import type { Collection } from '../collection';
 import type { Db } from '../db';
 import type { CollationOptions } from '../cmap/wire_protocol/write_command';
 import type { FindOptions } from './find';
+import { AbstractCursor, ExecutionResult } from '../cursor/abstract_cursor';
+import type { ClientSession } from '../sessions';
+import { executeOperation } from './execute_operation';
 
 const LIST_INDEXES_WIRE_VERSION = 3;
 const VALID_INDEX_OPTIONS = new Set([
@@ -346,6 +349,33 @@ export class ListIndexesOperation extends CommandOperation<ListIndexesOptions, D
       { listIndexes: this.collectionNamespace.collection, cursor },
       callback
     );
+  }
+}
+
+export class ListIndexesCursor extends AbstractCursor {
+  parent: Collection;
+  options?: ListIndexesOptions;
+
+  constructor(collection: Collection, options?: ListIndexesOptions) {
+    super(collection.s.topology, options);
+    this.parent = collection;
+    this.options = options;
+  }
+
+  _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
+    const operation = new ListIndexesOperation(this.parent, { session, ...this.options });
+    executeOperation(this.topology, operation, (err, response) => {
+      if (err || response == null) return callback(err);
+
+      // NOTE: `executeOperation` should be improved to allow returning an intermediate
+      //       representation including the selected server, session, and server response.
+      callback(undefined, {
+        namespace: operation.ns,
+        server: operation.server,
+        session,
+        response
+      });
+    });
   }
 }
 

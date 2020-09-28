@@ -76,11 +76,16 @@ export abstract class CommandOperation<
     this.readPreference = this.hasAspect(Aspect.WRITE_OPERATION)
       ? ReadPreference.primary
       : ReadPreference.fromOptions(options) ?? ReadPreference.primary;
-    this.readConcern = ReadConcern.fromOptions(options);
-    this.writeConcern = WriteConcern.fromOptions(options);
-    this.bsonOptions = resolveBSONOptions(options);
 
-    this.explain = false;
+    if (typeof options?.explain === 'boolean') {
+      this.explain = options.explain;
+    } else {
+      this.explain = false;
+      this.readConcern = ReadConcern.fromOptions(options);
+      this.writeConcern = WriteConcern.fromOptions(options);
+    }
+
+    this.bsonOptions = resolveBSONOptions(options);
     this.fullResponse =
       options && typeof options.fullResponse === 'boolean' ? options.fullResponse : false;
 

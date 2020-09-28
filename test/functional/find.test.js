@@ -1722,14 +1722,17 @@ describe('Find', function () {
           var cursor = collection.find({}, {});
           cursor.count(function (err) {
             expect(err).to.not.exist;
-            cursor.each(function (err, obj) {
-              if (obj == null) {
+            cursor.forEach(
+              doc => {
+                expect(doc).to.exist;
+                numberOfSteps = numberOfSteps + 1;
+              },
+              err => {
+                expect(err).to.not.exist;
                 test.equal(500, numberOfSteps);
                 p_client.close(done);
-              } else {
-                numberOfSteps = numberOfSteps + 1;
               }
-            });
+            );
           });
         });
       });
@@ -2167,11 +2170,15 @@ describe('Find', function () {
         // Create a collection we want to drop later
         db.collection('noresultAvailableForEachToIterate', function (err, collection) {
           // Perform a simple find and return all the documents
-          collection.find({}).each(function (err, item) {
-            expect(item).to.not.exist;
-
-            client.close(done);
-          });
+          collection.find({}).forEach(
+            doc => {
+              expect(doc).to.not.exist;
+            },
+            err => {
+              expect(err).to.not.exist;
+              client.close(done);
+            }
+          );
         });
       });
     }
