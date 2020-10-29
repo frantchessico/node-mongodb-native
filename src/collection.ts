@@ -16,7 +16,7 @@ import { OrderedBulkOperation } from './bulk/ordered';
 import { ChangeStream, ChangeStreamOptions } from './change_stream';
 import { WriteConcern, WriteConcernOptions } from './write_concern';
 import { ReadConcern, ReadConcernLike } from './read_concern';
-import { AggregationCursor, Cursor } from './cursor';
+import { AggregationCursor } from './cursor';
 import type { AggregateOptions } from './operations/aggregate';
 import { BulkWriteOperation } from './operations/bulk_write';
 import { CountDocumentsOperation, CountDocumentsOptions } from './operations/count_documents';
@@ -42,7 +42,7 @@ import {
   EstimatedDocumentCountOperation,
   EstimatedDocumentCountOptions
 } from './operations/estimated_document_count';
-import { FindOperation, FindOptions } from './operations/find';
+import type { FindOptions } from './operations/find';
 import { FindOneOperation } from './operations/find_one';
 import {
   FindAndModifyOperation,
@@ -631,10 +631,10 @@ export class Collection implements OperationParent {
    *
    * @param filter - The query predicate. If unspecified, then all documents in the collection will match the predicate
    */
-  find(): Cursor;
-  find(filter: Document): Cursor;
-  find(filter: Document, options: FindOptions): Cursor;
-  find(filter?: Document, options?: FindOptions): Cursor {
+  find(): FindCursor;
+  find(filter: Document): FindCursor;
+  find(filter: Document, options: FindOptions): FindCursor;
+  find(filter?: Document, options?: FindOptions): FindCursor {
     if (arguments.length > 2) {
       throw new TypeError('Third parameter to `collection.find()` must be undefined');
     }
@@ -642,11 +642,11 @@ export class Collection implements OperationParent {
       throw new TypeError('`options` parameter must not be function');
     }
 
-    options = resolveOptions(this, options);
-    return new Cursor(
+    return new FindCursor(
       getTopology(this),
-      new FindOperation(this, this.s.namespace, filter, options),
-      options
+      this.s.namespace,
+      filter,
+      resolveOptions(this, options)
     );
   }
 

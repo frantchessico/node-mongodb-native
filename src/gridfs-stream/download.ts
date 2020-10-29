@@ -8,6 +8,7 @@ import type { Callback } from '../utils';
 import type { Collection } from '../collection';
 import type { ReadPreference } from '../read_preference';
 import type { GridFSBucketWriteStream } from './upload';
+import type { FindCursor } from '../cursor/find_cursor';
 
 /** @public */
 export interface GridFSBucketReadStreamOptions {
@@ -46,7 +47,7 @@ export interface GridFSBucketReadStreamPrivate {
   bytesToTrim: number;
   bytesToSkip: number;
   chunks: Collection;
-  cursor?: Cursor;
+  cursor?: Cursor | FindCursor;
   expected: number;
   files: Collection;
   filter: Document;
@@ -421,7 +422,7 @@ function handleStartOption(
 function handleEndOption(
   stream: GridFSBucketReadStream,
   doc: Document,
-  cursor: Cursor,
+  cursor: Cursor | FindCursor,
   options: GridFSBucketReadStreamOptions
 ) {
   if (options && options.end != null) {
