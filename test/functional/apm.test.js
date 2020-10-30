@@ -871,7 +871,7 @@ describe('APM', function () {
         }
 
         // otherwise compare the values
-        expect(maybeLong(actual[key])).to.deep.equal(expected[key]);
+        expect(maybeLong(actual[key]), key).to.deep.equal(expected[key]);
       });
     }
 
@@ -1008,11 +1008,12 @@ describe('APM', function () {
             return cursor
               .toArray()
               .catch(() => {} /* ignore */)
-              .then(() =>
+              .then(() => {
+                console.dir({ monitoringResults, expectations: test.expectations }, { depth: 9 });
                 test.expectations.forEach(expectation =>
                   validateExpectations(expectation, monitoringResults)
-                )
-              );
+                );
+              });
           }
 
           // Add options if they exists

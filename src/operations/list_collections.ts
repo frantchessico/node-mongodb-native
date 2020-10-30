@@ -9,6 +9,7 @@ import type { DocumentTransforms } from '../cursor/cursor';
 import { AbstractCursor, ExecutionResult } from '../cursor/abstract_cursor';
 import type { ClientSession } from '../sessions';
 import { executeOperation } from './execute_operation';
+import type { AbstractCursorOptions } from '../cursor/abstract_cursor';
 
 const LIST_COLLECTIONS_WIRE_VERSION = 3;
 
@@ -121,13 +122,18 @@ export class ListCollectionsCursor extends AbstractCursor {
     this.options = options;
   }
 
-  _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
+  _initialize(
+    session: ClientSession | undefined,
+    options: AbstractCursorOptions,
+    callback: Callback<ExecutionResult>
+  ): void {
     const operation = new ListCollectionsOperation(this.parent, this.filter, {
       session,
+      ...options,
       ...this.options
     });
 
-    executeOperation(this.topology, operation, (err, response) => {
+    executeOperation(this.parent.s.topology, operation, (err, response) => {
       if (err || response == null) return callback(err);
 
       // NOTE: `executeOperation` should be improved to allow returning an intermediate

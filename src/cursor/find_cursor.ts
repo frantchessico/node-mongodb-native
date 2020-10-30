@@ -1,6 +1,7 @@
 import type { Document } from '../bson';
 import type { CollationOptions } from '../cmap/wire_protocol/write_command';
 import { MongoError } from '../error';
+import { CountOperation, CountOptions } from '../operations/count';
 import { executeOperation } from '../operations/execute_operation';
 import { FindOperation, FindOptions } from '../operations/find';
 import type { Hint } from '../operations/operation';
@@ -8,9 +9,20 @@ import type { Topology } from '../sdam/topology';
 import type { ClientSession } from '../sessions';
 import { formatSort, Sort, SortDirection } from '../sort';
 import type { Callback, MongoDBNamespace } from '../utils';
-import { AbstractCursor, ExecutionResult } from './abstract_cursor';
+import { AbstractCursor, AbstractCursorOptions, ExecutionResult } from './abstract_cursor';
 
+/** @internal */
 const kFilter = Symbol('filter');
+
+/** @public Flags allowed for cursor */
+export const FLAGS = [
+  'tailable',
+  'oplogReplay',
+  'noCursorTimeout',
+  'awaitData',
+  'exhaust',
+  'partial'
+] as const;
 
 export class FindCursor extends AbstractCursor {
   ns: MongoDBNamespace;
@@ -28,11 +40,23 @@ export class FindCursor extends AbstractCursor {
     this.ns = ns; // TEMPORARY
     this[kFilter] = filter || {};
     this.options = options;
+
+    if (typeof options.sort !== 'undefined') {
+      this.options.sort = formatSort(options.sort);
+    }
   }
 
-  _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
+  /** @internal */
+  _initialize(
+    session: ClientSession | undefined,
+    options: AbstractCursorOptions,
+    callback: Callback<ExecutionResult>
+  ): void {
+    this.options = Object.freeze(this.options);
+
     const findOperation = new FindOperation(undefined, this.ns, this[kFilter], {
       session,
+      ...options,
       ...this.options
     });
 
@@ -48,6 +72,58 @@ export class FindCursor extends AbstractCursor {
         response
       });
     });
+  }
+
+  /**
+   * Get the count of documents for this cursor
+   *
+   * @param applySkipLimit - Should the count command apply limit and skip settings on the cursor or in the passed in options.
+   */
+
+  count(): Promise<number>;
+  count(callback: Callback<number>): void;
+  count(options: CountOptions): Promise<number>;
+  count(options: CountOptions, callback: Callback<number>): void;
+  count(
+    options?: CountOptions | Callback<number>,
+    callback?: Callback<number>
+  ): Promise<number> | void {
+    if (typeof options === 'boolean') {
+      throw new TypeError('Invalid first parameter to count');
+    }
+
+    if (typeof options === 'function') (callback = options), (options = {});
+    options = options || {};
+
+    // if (this.session) {
+    //   options = Object.assign({}, options, { session: this.session });
+    // }
+
+    return executeOperation(
+      this.topology,
+      new CountOperation(this, this[kFilter], Object.assign({}, options, this.options)),
+      callback
+    );
+  }
+
+  /**
+   * Execute the explain for the cursor
+   *
+   * @param callback - The result callback.
+   */
+  explain(): Promise<unknown>;
+  explain(callback: Callback): void;
+  explain(callback?: Callback): Promise<unknown> | void {
+    // TODO: session?
+    return executeOperation(
+      this.topology,
+      new FindOperation(undefined, this.ns, this[kFilter], {
+        explain: true,
+        // session,
+        ...this.options
+      }),
+      callback
+    );
   }
 
   /** Set the cursor query */
@@ -109,67 +185,67 @@ export class FindCursor extends AbstractCursor {
   }
 
   /**
-   * Set a node.js specific cursor option
-   *
-   * @param field - The cursor option to set 'numberOfRetries' | 'tailableRetryInterval'.
-   * @param value - The field value.
-   */
-  // setCursorOption(field: typeof FIELDS[number], value: number): this {
-  //   if (!FIELDS.includes(field)) {
-  //     throw new MongoError(`option ${field} is not a supported option ${FIELDS}`);
-  //   }
-
-  //   Object.assign(this.s, { [field]: value });
-  //   if (field === 'numberOfRetries') this.s.currentNumberOfRetries = value as number;
-  //   return this;
-  // }
-
-  /**
-   * Add a cursor flag to the cursor
-   *
-   * @param flag - The flag to set, must be one of following ['tailable', 'oplogReplay', 'noCursorTimeout', 'awaitData', 'partial' -.
-   * @param value - The flag boolean value.
-   */
-  // addCursorFlag(flag: CursorFlag, value: boolean): this {
-  //   if (!FLAGS.includes(flag)) {
-  //     throw new MongoError(`flag ${flag} is not a supported flag ${FLAGS}`);
-  //   }
-
-  //   if (typeof value !== 'boolean') {
-  //     throw new MongoError(`flag ${flag} must be a boolean value`);
-  //   }
-
-  //   if (flag === 'tailable') {
-  //     this.tailable = value;
-  //   }
-
-  //   if (flag === 'awaitData') {
-  //     this.awaitData = value;
-  //   }
-
-  //   this.cmd[flag] = value;
-  //   return this;
-  // }
-
-  /**
    * Add a query modifier to the cursor query
    *
    * @param name - The query modifier (must start with $, such as $orderby etc)
    * @param value - The modifier value.
    */
-  // addQueryModifier(name: string, value: string | boolean | number): this {
-  //   if (name[0] !== '$') {
-  //     throw new MongoError(`${name} is not a valid query modifier`);
-  //   }
+  addQueryModifier(name: string, value: string | boolean | number | Document): this {
+    if (name[0] !== '$') {
+      throw new MongoError(`${name} is not a valid query modifier`);
+    }
 
-  //   // Strip of the $
-  //   const field = name.substr(1);
-  //   // Set on the command
-  //   this.cmd[field] = value;
-  //   // Deal with the special case for sort
-  //   if (field === 'orderby') this.cmd.sort = this.cmd[field];
-  //   return this;
-  // }
+    // Strip of the $
+    const field = name.substr(1);
+
+    // NOTE: consider some TS magic for this
+    switch (field) {
+      case 'comment':
+        this.options.comment = value as string | Document;
+        break;
+
+      case 'explain':
+        this.options.explain = value as boolean;
+        break;
+
+      case 'hint':
+        this.options.hint = value as string | Document;
+        break;
+
+      case 'max':
+        this.options.max = value as number;
+        break;
+
+      case 'maxTimeMS':
+        this.options.maxTimeMS = value as number;
+        break;
+
+      case 'min':
+        this.options.min = value as number;
+        break;
+
+      case 'orderby':
+        this.options.sort = formatSort(value as string | Document);
+        break;
+
+      case 'query':
+        this[kFilter] = value as Document;
+        break;
+
+      case 'returnKey':
+        this.options.returnKey = value as boolean;
+        break;
+
+      case 'showDiskLoc':
+        this.options.showRecordId = value as boolean;
+        break;
+
+      default:
+        throw new TypeError(`invalid query modifier: ${name}`);
+    }
+
+    return this;
+  }
 
   /**
    * Add a comment to the cursor query allowing for tracking the comment in the log.

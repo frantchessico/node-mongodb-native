@@ -7,6 +7,7 @@ import type { Server } from '../sdam/server';
 import type { CursorCloseOptions, CursorStreamOptions } from './cursor';
 import type { Topology } from '../sdam/topology';
 import { Readable } from 'stream';
+import { EventEmitter } from 'events';
 
 const kId = Symbol('id');
 const kDocuments = Symbol('documents');
@@ -15,6 +16,20 @@ const kNamespace = Symbol('namespace');
 const kTopology = Symbol('topology');
 const kSession = Symbol('session');
 const kOptions = Symbol('options');
+const kTransform = Symbol('transform');
+
+/** @internal */
+export const CURSOR_FLAGS = [
+  'tailable',
+  'oplogReplay',
+  'noCursorTimeout',
+  'awaitData',
+  'exhaust',
+  'partial'
+] as const;
+
+/** @public */
+export type CursorFlag = typeof CURSOR_FLAGS[number];
 
 export interface AbstractCursorOptions extends BSONSerializeOptions {
   session?: ClientSession;
@@ -22,27 +37,40 @@ export interface AbstractCursorOptions extends BSONSerializeOptions {
   batchSize?: number;
   maxTimeMS?: number;
   comment?: Document | string;
+  tailable?: boolean;
+  awaitData?: boolean;
 }
 
-export abstract class AbstractCursor {
+export abstract class AbstractCursor extends EventEmitter {
   [kId]?: Long;
   [kSession]?: ClientSession;
   [kServer]?: Server;
   [kNamespace]?: MongoDBNamespace;
   [kDocuments]: Document[];
   [kTopology]: Topology;
+  [kTransform]?: (doc: Document) => Document;
   [kOptions]: {
     readPreference: ReadPreference;
     batchSize?: number;
     maxTimeMS?: number;
     comment?: Document | string;
+
+    // cursor flags, some are deprecated
+    tailable?: boolean;
+    awaitData?: boolean;
+    oplogReplay?: boolean;
+    noCursorTimeout?: boolean;
+    exhaust?: boolean;
+    partial?: boolean;
   };
 
   constructor(topology: Topology, options: AbstractCursorOptions = {}) {
+    super();
+
     this[kTopology] = topology;
     this[kDocuments] = []; // TODO: https://github.com/microsoft/TypeScript/issues/36230
     this[kOptions] = {
-      batchSize: typeof options.batchSize === 'number' ? options.batchSize : 1000, // TODO: there should be no default here
+      batchSize: typeof options.batchSize === 'number' ? options.batchSize : undefined, // TODO: there should be no default here
       comment: options.comment,
       maxTimeMS: typeof options.maxTimeMS === 'number' ? options.maxTimeMS : undefined,
       readPreference:
@@ -70,6 +98,51 @@ export abstract class AbstractCursor {
 
   get readPreference(): ReadPreference {
     return this[kOptions].readPreference;
+  }
+
+  // NOTE: should we remove these? They are currently needed by a number of tests
+  isClosed(): boolean {
+    const cursorId = this[kId];
+    if (cursorId == null) {
+      return false;
+    }
+
+    return cursorId.isZero() || cursorId === Long.ZERO;
+  }
+
+  /** Returns current buffered documents length */
+  bufferedCount(): number {
+    return this[kDocuments].length;
+  }
+
+  /** Returns current buffered documents */
+  readBufferedDocuments(number: number): Document[] {
+    return this[kDocuments].slice(0, number);
+    // const unreadDocumentsLength = this.documents.length - this.cursorIndex;
+    // const length = number < unreadDocumentsLength ? number : unreadDocumentsLength;
+    // let elements = this.documents.slice(this.cursorIndex, this.cursorIndex + length);
+
+    // // Transform the doc with passed in transformation method if provided
+    // if (this.transforms && typeof this.transforms.doc === 'function') {
+    //   // Transform all the elements
+    //   for (let i = 0; i < elements.length; i++) {
+    //     elements[i] = this.transforms.doc(elements[i]);
+    //   }
+    // }
+
+    // // Ensure we do not return any more documents than the limit imposed
+    // // Just return the number of elements up to the limit
+    // if (this._limit > 0 && this.currentLimit + elements.length > this._limit) {
+    //   elements = elements.slice(0, this._limit - this.currentLimit);
+    //   this.kill();
+    // }
+
+    // // Adjust current limit
+    // this.currentLimit = this.currentLimit + elements.length;
+    // this.cursorIndex = this.cursorIndex + elements.length;
+
+    // // Return elements
+    // return elements;
   }
 
   [Symbol.asyncIterator](): AsyncIterator<Document | null> {
@@ -130,23 +203,34 @@ export abstract class AbstractCursor {
    * @param iterator - The iteration callback.
    * @param callback - The end callback.
    */
-  forEach(iterator: (doc: Document) => void): Promise<void>;
-  forEach(iterator: (doc: Document) => void, callback: Callback<void>): void;
-  forEach(iterator: (doc: Document) => void, callback?: Callback<void>): Promise<void> | void {
+  forEach(iterator: (doc: Document) => boolean | void): Promise<void>;
+  forEach(iterator: (doc: Document) => boolean | void, callback: Callback<void>): void;
+  forEach(
+    iterator: (doc: Document) => boolean | void,
+    callback?: Callback<void>
+  ): Promise<void> | void {
     if (typeof iterator !== 'function') {
       throw new TypeError('Missing required parameter `iterator`');
     }
 
     return maybePromise(callback, done => {
+      const transform = this[kTransform];
       const fetchDocs = () => {
         next(this, (err, doc) => {
           if (err || doc == null) return done(err);
           if (doc == null) return done();
 
-          iterator(doc);
+          // NOTE: no need to transform because `next` will do this automatically
+          let result = iterator(doc);
+          if (result === false) return done();
+
+          // these do need to be transformed since they are copying the rest of the batch
           const internalDocs = this[kDocuments].splice(0, this[kDocuments].length);
           if (internalDocs) {
-            for (let i = 0; i < internalDocs.length; ++i) iterator(internalDocs[i]);
+            for (let i = 0; i < internalDocs.length; ++i) {
+              result = iterator(transform ? transform(internalDocs[i]) : internalDocs[i]);
+              if (result === false) return done();
+            }
           }
 
           fetchDocs();
@@ -172,15 +256,21 @@ export abstract class AbstractCursor {
       const session = this[kSession];
 
       if (cursorId == null || server == null || cursorId.isZero() || cursorNs == null) {
+        this[kId] = Long.ZERO;
+        this.emit('close');
         return done();
       }
 
       // TODO: bson options
       server.killCursors(cursorNs.toString(), [cursorId], { session }, () => {
         if (session && session.owner === this) {
-          return session.endSession(done);
+          return session.endSession(() => {
+            this.emit('close');
+            done();
+          });
         }
 
+        this.emit('close');
         done();
       });
     });
@@ -199,13 +289,21 @@ export abstract class AbstractCursor {
   toArray(callback?: Callback<Document[]>): Promise<Document[]> | void {
     return maybePromise(callback, done => {
       const docs: Document[] = [];
+      const transform = this[kTransform];
       const fetchDocs = () => {
+        // NOTE: if we add a `nextBatch` then we should use it here
         next(this, (err, doc) => {
           if (err) return done(err);
           if (doc == null) return done(undefined, docs);
 
+          // NOTE: no need to transform because `next` will do this automatically
           docs.push(doc);
-          const internalDocs = this[kDocuments].splice(0, this[kDocuments].length);
+
+          // these do need to be transformed since they are copying the rest of the batch
+          const internalDocs = transform
+            ? this[kDocuments].splice(0, this[kDocuments].length).map(transform)
+            : this[kDocuments].splice(0, this[kDocuments].length);
+
           if (internalDocs) {
             docs.push(...internalDocs);
           }
@@ -219,6 +317,43 @@ export abstract class AbstractCursor {
   }
 
   // DO THESE PROPERTIES BELONG HERE?
+
+  /**
+   * Add a cursor flag to the cursor
+   *
+   * @param flag - The flag to set, must be one of following ['tailable', 'oplogReplay', 'noCursorTimeout', 'awaitData', 'partial' -.
+   * @param value - The flag boolean value.
+   */
+  addCursorFlag(flag: CursorFlag, value: boolean): this {
+    if (!CURSOR_FLAGS.includes(flag)) {
+      throw new MongoError(`flag ${flag} is not one of ${CURSOR_FLAGS}`);
+    }
+
+    if (typeof value !== 'boolean') {
+      throw new MongoError(`flag ${flag} must be a boolean value`);
+    }
+
+    this[kOptions][flag] = value;
+    return this;
+  }
+
+  /**
+   * Map all documents using the provided function
+   *
+   * @param transform - The mapping transformation method.
+   */
+  map(transform: (doc: Document) => Document): this {
+    const oldTransform = this[kTransform];
+    if (oldTransform) {
+      this[kTransform] = doc => {
+        return transform(oldTransform(doc));
+      };
+    } else {
+      this[kTransform] = transform;
+    }
+
+    return this;
+  }
 
   /**
    * Set the ReadPreference for the cursor.
@@ -284,6 +419,7 @@ export abstract class AbstractCursor {
   /* @internal */
   abstract _initialize(
     session: ClientSession | undefined,
+    options: AbstractCursorOptions,
     callback: Callback<ExecutionResult>
   ): void;
 }
@@ -375,6 +511,20 @@ export class AbstractCursorStream extends Readable {
   }
 }
 
+function nextDocument(cursor: AbstractCursor): Document | null {
+  const doc = cursor[kDocuments].shift();
+  if (doc) {
+    const transform = cursor[kTransform];
+    if (transform) {
+      return transform(doc);
+    }
+
+    return doc;
+  }
+
+  return null;
+}
+
 function next(cursor: AbstractCursor, callback: Callback<Document | null>): void {
   const cursorId = cursor[kId];
   const cursorNs = cursor[kNamespace];
@@ -387,7 +537,7 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
       ? cursor[kTopology].startSession({ owner: cursor, explicit: true })
       : undefined;
 
-    cursor._initialize(session, (err, state) => {
+    cursor._initialize(session, cursor[kOptions], (err, state) => {
       if (state) {
         const response = state.response;
         cursor[kServer] = state.server;
@@ -413,24 +563,22 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
 
       if (err || (cursor.id && cursor.id.isZero())) {
         if (session && session.owner === cursor) {
-          session.endSession(() =>
-            callback(err, cursor[kDocuments].length ? cursor[kDocuments].shift() : null)
-          );
+          session.endSession(() => callback(err, nextDocument(cursor)));
         } else {
-          callback(err, cursor[kDocuments].length ? cursor[kDocuments].shift() : null);
+          callback(err, nextDocument(cursor));
         }
 
         return;
       }
 
-      callback(err, cursor[kDocuments].length ? cursor[kDocuments].shift() : null);
+      callback(err, nextDocument(cursor));
     });
 
     return;
   }
 
   if (cursor[kDocuments].length) {
-    callback(undefined, cursor[kDocuments].shift());
+    callback(undefined, nextDocument(cursor));
     return;
   }
 
@@ -456,7 +604,8 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
     cursorId,
     {
       session: cursor[kSession],
-      ...cursor[kOptions]
+      ...cursor[kOptions],
+      batchSize: cursor[kOptions].batchSize || 1000 // TODO: there should be no default here
     },
     (err, response) => {
       if (response) {
@@ -472,17 +621,15 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
       if (err || (cursor.id && cursor.id.isZero())) {
         const session = cursor[kSession];
         if (session && session.owner === cursor) {
-          session.endSession(() =>
-            callback(err, cursor[kDocuments].length ? cursor[kDocuments].shift() : null)
-          );
+          session.endSession(() => callback(err, nextDocument(cursor)));
         } else {
-          callback(err, cursor[kDocuments].length ? cursor[kDocuments].shift() : null);
+          callback(err, nextDocument(cursor));
         }
 
         return;
       }
 
-      callback(err, cursor[kDocuments].length ? cursor[kDocuments].shift() : null);
+      callback(err, nextDocument(cursor));
     }
   );
 }

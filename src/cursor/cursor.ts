@@ -5,7 +5,7 @@ import { Long, Document, BSONSerializeOptions } from '../bson';
 import { MongoError, MongoNetworkError, AnyError } from '../error';
 import { Logger } from '../logger';
 import { executeOperation } from '../operations/execute_operation';
-import { CountOperation, CountOptions } from '../operations/count';
+// import { CountOperation, CountOptions } from '../operations/count';
 import { ReadPreference, ReadPreferenceLike } from '../read_preference';
 import { Callback, emitDeprecatedOptionWarning, maybePromise, MongoDBNamespace } from '../utils';
 import { Sort, SortDirection, formatSort } from '../sort';
@@ -1201,7 +1201,7 @@ export class Cursor<
    *
    * @param applySkipLimit - Should the count command apply limit and skip settings on the cursor or in the passed in options.
    */
-
+  /*
   count(): Promise<number>;
   count(callback: Callback<number>): void;
   count(applySkipLimit: boolean): Promise<number>;
@@ -1232,6 +1232,7 @@ export class Cursor<
     const countOperation = new CountOperation(this, !!applySkipLimit, options);
     return executeOperation(this.topology, countOperation, callback);
   }
+  */
 
   /** Close the cursor, sending a KillCursor command and emitting close. */
   close(): Promise<void>;

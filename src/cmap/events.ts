@@ -394,6 +394,10 @@ function extractCommand(command: WriteProtocolMessageType): Document {
 }
 
 function extractReply(command: WriteProtocolMessageType, reply?: Document) {
+  if (reply) {
+    reply = JSON.parse(JSON.stringify(reply));
+  }
+
   if (command instanceof KillCursor) {
     return {
       ok: 1,

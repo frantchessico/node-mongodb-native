@@ -43,7 +43,15 @@ export function query(
   }
 
   const readPreference = getReadPreference(cmd, options);
-  const findCmd = prepareFindCommand(server, ns, cmd);
+  let findCmd = prepareFindCommand(server, ns, cmd);
+
+  // If we have explain, we need to rewrite the find command
+  // to wrap it in the explain command
+  if (typeof options.explain === 'boolean' && options.explain === true) {
+    findCmd = {
+      explain: findCmd
+    };
+  }
 
   // NOTE: This actually modifies the passed in cmd, and our code _depends_ on this
   //       side-effect. Change this ASAP

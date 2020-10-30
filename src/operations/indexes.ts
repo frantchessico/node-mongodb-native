@@ -13,6 +13,7 @@ import type { FindOptions } from './find';
 import { AbstractCursor, ExecutionResult } from '../cursor/abstract_cursor';
 import type { ClientSession } from '../sessions';
 import { executeOperation } from './execute_operation';
+import type { AbstractCursorOptions } from '../cursor/abstract_cursor';
 
 const LIST_INDEXES_WIRE_VERSION = 3;
 const VALID_INDEX_OPTIONS = new Set([
@@ -362,9 +363,19 @@ export class ListIndexesCursor extends AbstractCursor {
     this.options = options;
   }
 
-  _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
-    const operation = new ListIndexesOperation(this.parent, { session, ...this.options });
-    executeOperation(this.topology, operation, (err, response) => {
+  /** @internal */
+  _initialize(
+    session: ClientSession | undefined,
+    options: AbstractCursorOptions,
+    callback: Callback<ExecutionResult>
+  ): void {
+    const operation = new ListIndexesOperation(this.parent, {
+      session,
+      ...options,
+      ...this.options
+    });
+
+    executeOperation(this.parent.s.topology, operation, (err, response) => {
       if (err || response == null) return callback(err);
 
       // NOTE: `executeOperation` should be improved to allow returning an intermediate

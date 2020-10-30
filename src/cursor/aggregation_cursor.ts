@@ -8,6 +8,7 @@ import type { Callback } from '../utils';
 import type { ClientSession } from '../sessions';
 import type { CursorOptions } from './cursor';
 import type { OperationParent } from '../operations/command';
+import type { AbstractCursorOptions } from './abstract_cursor';
 
 /** @public */
 export interface AggregationCursorOptions extends CursorOptions, AggregateOptions {}
@@ -38,9 +39,15 @@ export class AggregationCursor extends AbstractCursor {
     this.options = options;
   }
 
-  _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
+  /** @internal */
+  _initialize(
+    session: ClientSession | undefined,
+    options: AbstractCursorOptions,
+    callback: Callback<ExecutionResult>
+  ): void {
     const aggregateOperation = new AggregateOperation(this.parent, this.pipeline, {
       session,
+      ...options,
       ...this.options
     });
 
