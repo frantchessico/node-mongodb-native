@@ -1008,12 +1008,11 @@ describe('APM', function () {
             return cursor
               .toArray()
               .catch(() => {} /* ignore */)
-              .then(() => {
-                console.dir({ monitoringResults, expectations: test.expectations }, { depth: 9 });
+              .then(() =>
                 test.expectations.forEach(expectation =>
                   validateExpectations(expectation, monitoringResults)
-                );
-              });
+                )
+              );
           }
 
           // Add options if they exists

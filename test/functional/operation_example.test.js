@@ -5502,8 +5502,7 @@ describe('Operation Examples', function () {
             expect(err).to.not.exist;
 
             // Close the cursor, this is the same as reseting the query
-            cursor.close(function (err, result) {
-              test.ok(result);
+            cursor.close(function (err) {
               expect(err).to.not.exist;
               test.equal(true, cursor.isClosed());
 
@@ -5567,8 +5566,7 @@ describe('Operation Examples', function () {
             expect(err).to.not.exist;
 
             // Close the cursor, this is the same as reseting the query
-            cursor.close(function (err, result) {
-              test.ok(result);
+            cursor.close(function (err) {
               expect(err).to.not.exist;
 
               client.close(done);

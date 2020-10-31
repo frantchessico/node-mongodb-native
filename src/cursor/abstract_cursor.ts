@@ -1,5 +1,5 @@
 import { Callback, maybePromise, MongoDBNamespace } from '../utils';
-import { Long, Document, BSONSerializeOptions } from '../bson';
+import { Long, Document, BSONSerializeOptions, pluckBSONSerializeOptions } from '../bson';
 import { ClientSession } from '../sessions';
 import { AnyError, MongoError } from '../error';
 import { ReadPreference, ReadPreferenceLike } from '../read_preference';
@@ -8,6 +8,7 @@ import type { CursorCloseOptions, CursorStreamOptions } from './cursor';
 import type { Topology } from '../sdam/topology';
 import { Readable } from 'stream';
 import { EventEmitter } from 'events';
+import { read } from 'fs';
 
 const kId = Symbol('id');
 const kDocuments = Symbol('documents');
@@ -62,7 +63,12 @@ export abstract class AbstractCursor extends EventEmitter {
     noCursorTimeout?: boolean;
     exhaust?: boolean;
     partial?: boolean;
-  };
+  } & BSONSerializeOptions;
+
+  closed: boolean;
+
+  /** @event */
+  static readonly CLOSE = 'close' as const;
 
   constructor(topology: Topology, options: AbstractCursorOptions = {}) {
     super();
@@ -76,12 +82,15 @@ export abstract class AbstractCursor extends EventEmitter {
       readPreference:
         options.readPreference && options.readPreference instanceof ReadPreference
           ? options.readPreference
-          : ReadPreference.primary
+          : ReadPreference.primary,
+      ...pluckBSONSerializeOptions(options)
     };
 
     if (options.session instanceof ClientSession) {
       this[kSession] = options.session;
     }
+
+    this.closed = false;
   }
 
   get id(): Long | undefined {
@@ -249,6 +258,8 @@ export abstract class AbstractCursor extends EventEmitter {
     if (typeof options === 'function') (callback = options), (options = {});
     options = options || {};
 
+    this.closed = true;
+
     return maybePromise(callback, done => {
       const cursorId = this[kId];
       const cursorNs = this[kNamespace];
@@ -257,7 +268,7 @@ export abstract class AbstractCursor extends EventEmitter {
 
       if (cursorId == null || server == null || cursorId.isZero() || cursorNs == null) {
         this[kId] = Long.ZERO;
-        this.emit('close');
+        this.emit(AbstractCursor.CLOSE);
         return done();
       }
 
@@ -265,12 +276,12 @@ export abstract class AbstractCursor extends EventEmitter {
       server.killCursors(cursorNs.toString(), [cursorId], { session }, () => {
         if (session && session.owner === this) {
           return session.endSession(() => {
-            this.emit('close');
+            this.emit(AbstractCursor.CLOSE);
             done();
           });
         }
 
-        this.emit('close');
+        this.emit(AbstractCursor.CLOSE);
         done();
       });
     });
@@ -442,6 +453,7 @@ const kCursor = Symbol('cursor');
 export class AbstractCursorStream extends Readable {
   [kCursor]: AbstractCursor;
   options: CursorStreamOptions;
+  reading: boolean;
 
   /** @event */
   static readonly CLOSE = 'close' as const;
@@ -511,7 +523,11 @@ export class AbstractCursorStream extends Readable {
   }
 }
 
-function nextDocument(cursor: AbstractCursor): Document | null {
+function nextDocument(cursor: AbstractCursor): Document | null | undefined {
+  if (cursor[kDocuments] == null || !cursor[kDocuments].length) {
+    return undefined;
+  }
+
   const doc = cursor[kDocuments].shift();
   if (doc) {
     const transform = cursor[kTransform];
@@ -633,3 +649,58 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
     }
   );
 }
+
+// function makeCursorStream(cursor: AbstractCursor) {
+//   const readable = new Readable({
+//     objectMode: true,
+//     highWaterMark: 1
+//   });
+
+//   let reading = false;
+//   let needToClose = false;
+
+//   readable._read = function () {
+//     if (!reading) {
+//       reading = true;
+//       readNext();
+//     }
+//   };
+
+//   readable._destroy = function (error, cb) {
+//     if (needToClose) {
+//       cursor.close(err => process.nextTick(cb, err));
+//     } else {
+//       cb(error);
+//     }
+//   };
+
+//   function readNext() {
+//     needToClose = false;
+//     next(cursor, (err, result) => {
+//       if (err) {
+//         if (cursor.closed) {
+//           return readable.push(null);
+//         }
+
+//         return readable.destroy(err);
+//       }
+
+//       if (result === null) {
+//         // console.log('DONE READING');
+//         return readable.push(null);
+//       }
+
+//       if (readable.destroyed) {
+//         return cursor.close();
+//       }
+
+//       if (readable.push(result)) {
+//         return readNext();
+//       }
+
+//       reading = false;
+//     });
+//   }
+
+//   return readable;
+// }

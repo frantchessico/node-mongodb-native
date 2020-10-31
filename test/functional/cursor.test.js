@@ -2112,6 +2112,7 @@ describe('Cursor', function () {
 
                 var validator = () => {
                   closeCount++;
+                  console.log('closeCount: ', closeCount);
                   if (closeCount === 2) {
                     done();
                   }
@@ -2128,6 +2129,7 @@ describe('Cursor', function () {
                       expect(err).to.not.exist;
 
                       if (id === 99) {
+                        console.log('id === 99, closing client');
                         setTimeout(() => client.close());
                       }
                     });

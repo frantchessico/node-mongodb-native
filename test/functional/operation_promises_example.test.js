@@ -5001,7 +5001,7 @@ describe('Operation (Promises)', function () {
               total = total + 1;
 
               if (total === 1000) {
-                cursor.kill();
+                cursor.close();
               }
             });
             stream.on('end', function () {

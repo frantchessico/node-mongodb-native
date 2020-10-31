@@ -1112,5 +1112,25 @@ export function resolveOptions<T extends CommandOperationOptions>(
     result.readPreference = readPreference;
   }
 
+  // bson options:
+  // fieldsAsRaw,
+  // promoteValues,
+  // promoteBuffers,
+  // promoteLongs,
+  // serializeFunctions,
+  // ignoreUndefined,
+  // raw
+
+  const parentOptions = parent?.bsonOptions;
+  Object.assign(result, {
+    raw: options?.raw ?? parentOptions?.raw ?? false,
+    promoteLongs: options?.promoteLongs ?? parentOptions?.promoteLongs ?? true,
+    promoteValues: options?.promoteValues ?? parentOptions?.promoteValues ?? true,
+    promoteBuffers: options?.promoteBuffers ?? parentOptions?.promoteBuffers ?? false,
+    ignoreUndefined: options?.ignoreUndefined ?? parentOptions?.ignoreUndefined ?? false,
+    serializeFunctions: options?.serializeFunctions ?? parentOptions?.serializeFunctions ?? false,
+    fieldsAsRaw: options?.fieldsAsRaw ?? parentOptions?.fieldsAsRaw ?? {}
+  });
+
   return result;
 }

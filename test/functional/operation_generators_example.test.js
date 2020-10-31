@@ -4624,7 +4624,7 @@ describe('Operation (Generators)', function () {
             total = total + 1;
 
             if (total === 1000) {
-              cursor.kill();
+              cursor.close();
             }
           });
 
