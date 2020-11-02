@@ -1844,7 +1844,7 @@ describe('Cursor', function () {
             expect(err).to.not.exist;
 
             // insert all docs
-            collection.insert(docs, configuration.writeConcernMax(), err => {
+            collection.insertMany(docs, configuration.writeConcernMax(), err => {
               expect(err).to.not.exist;
 
               const cursor = collection.find();
@@ -1923,13 +1923,13 @@ describe('Cursor', function () {
 
             function testDone(err) {
               ++finished;
-              setTimeout(function () {
+              if (finished === 2) {
                 test.strictEqual(undefined, err);
                 test.strictEqual(5, i);
-                test.strictEqual(1, finished);
+                test.strictEqual(2, finished);
                 test.strictEqual(true, cursor.isClosed());
                 done();
-              }, 150);
+              }
             }
           });
         });
@@ -2024,24 +2024,13 @@ describe('Cursor', function () {
           });
 
           // insert all docs
-          collection.insert(docs, configuration.writeConcernMax(), err => {
+          collection.insertMany(docs, configuration.writeConcernMax(), err => {
             expect(err).to.not.exist;
 
-            var filename = '/tmp/_nodemongodbnative_stream_out.txt',
-              out = fs.createWriteStream(filename);
-
-            // hack so we don't need to create a stream filter just to
-            // stringify the objects (otherwise the created file would
-            // just contain a bunch of [object Object])
-            // var toString = Object.prototype.toString;
-            // Object.prototype.toString = function () {
-            //   return JSON.stringify(this);
-            // }
-
-            var stream = collection.find().stream({
-              transform: function (doc) {
-                return JSON.stringify(doc);
-              }
+            const filename = '/tmp/_nodemongodbnative_stream_out.txt';
+            const out = fs.createWriteStream(filename);
+            const stream = collection.find().stream({
+              transform: doc => JSON.stringify(doc)
             });
 
             stream.pipe(out);
@@ -2096,7 +2085,7 @@ describe('Cursor', function () {
           var count = 100;
           // Just hammer the server
           for (var i = 0; i < 100; i++) {
-            collection.insert({ id: i }, { w: 'majority', wtimeout: 5000 }, err => {
+            collection.insertOne({ id: i }, { w: 'majority', wtimeout: 5000 }, err => {
               expect(err).to.not.exist;
               count = count - 1;
 
@@ -2112,7 +2101,6 @@ describe('Cursor', function () {
 
                 var validator = () => {
                   closeCount++;
-                  console.log('closeCount: ', closeCount);
                   if (closeCount === 2) {
                     done();
                   }
@@ -2125,11 +2113,10 @@ describe('Cursor', function () {
                 for (var i = 0; i < 100; i++) {
                   const id = i;
                   process.nextTick(function () {
-                    collection.insert({ id }, err => {
+                    collection.insertOne({ id }, err => {
                       expect(err).to.not.exist;
 
                       if (id === 99) {
-                        console.log('id === 99, closing client');
                         setTimeout(() => client.close());
                       }
                     });

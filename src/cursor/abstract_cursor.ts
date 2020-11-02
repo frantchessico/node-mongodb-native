@@ -1,14 +1,13 @@
 import { Callback, maybePromise, MongoDBNamespace } from '../utils';
 import { Long, Document, BSONSerializeOptions, pluckBSONSerializeOptions } from '../bson';
 import { ClientSession } from '../sessions';
-import { AnyError, MongoError } from '../error';
+import { MongoError } from '../error';
 import { ReadPreference, ReadPreferenceLike } from '../read_preference';
 import type { Server } from '../sdam/server';
 import type { CursorCloseOptions, CursorStreamOptions } from './cursor';
 import type { Topology } from '../sdam/topology';
-import { Readable } from 'stream';
+import { Readable, Transform } from 'stream';
 import { EventEmitter } from 'events';
-import { read } from 'fs';
 
 const kId = Symbol('id');
 const kDocuments = Symbol('documents');
@@ -18,6 +17,7 @@ const kTopology = Symbol('topology');
 const kSession = Symbol('session');
 const kOptions = Symbol('options');
 const kTransform = Symbol('transform');
+const kClosed = Symbol('closed');
 
 /** @internal */
 export const CURSOR_FLAGS = [
@@ -50,6 +50,7 @@ export abstract class AbstractCursor extends EventEmitter {
   [kDocuments]: Document[];
   [kTopology]: Topology;
   [kTransform]?: (doc: Document) => Document;
+  [kClosed]: boolean;
   [kOptions]: {
     readPreference: ReadPreference;
     batchSize?: number;
@@ -65,8 +66,6 @@ export abstract class AbstractCursor extends EventEmitter {
     partial?: boolean;
   } & BSONSerializeOptions;
 
-  closed: boolean;
-
   /** @event */
   static readonly CLOSE = 'close' as const;
 
@@ -75,10 +74,8 @@ export abstract class AbstractCursor extends EventEmitter {
 
     this[kTopology] = topology;
     this[kDocuments] = []; // TODO: https://github.com/microsoft/TypeScript/issues/36230
+    this[kClosed] = false;
     this[kOptions] = {
-      batchSize: typeof options.batchSize === 'number' ? options.batchSize : undefined, // TODO: there should be no default here
-      comment: options.comment,
-      maxTimeMS: typeof options.maxTimeMS === 'number' ? options.maxTimeMS : undefined,
       readPreference:
         options.readPreference && options.readPreference instanceof ReadPreference
           ? options.readPreference
@@ -86,11 +83,21 @@ export abstract class AbstractCursor extends EventEmitter {
       ...pluckBSONSerializeOptions(options)
     };
 
+    if (typeof options.batchSize === 'number') {
+      this[kOptions].batchSize = options.batchSize;
+    }
+
+    if (typeof options.comment !== 'undefined') {
+      this[kOptions].comment = options.comment;
+    }
+
+    if (typeof options.maxTimeMS === 'number') {
+      this[kOptions].maxTimeMS = options.maxTimeMS;
+    }
+
     if (options.session instanceof ClientSession) {
       this[kSession] = options.session;
     }
-
-    this.closed = false;
   }
 
   get id(): Long | undefined {
@@ -109,14 +116,13 @@ export abstract class AbstractCursor extends EventEmitter {
     return this[kOptions].readPreference;
   }
 
+  get closed(): boolean {
+    return this[kClosed];
+  }
+
   // NOTE: should we remove these? They are currently needed by a number of tests
   isClosed(): boolean {
-    const cursorId = this[kId];
-    if (cursorId == null) {
-      return false;
-    }
-
-    return cursorId.isZero() || cursorId === Long.ZERO;
+    return this.closed;
   }
 
   /** Returns current buffered documents length */
@@ -127,31 +133,6 @@ export abstract class AbstractCursor extends EventEmitter {
   /** Returns current buffered documents */
   readBufferedDocuments(number: number): Document[] {
     return this[kDocuments].slice(0, number);
-    // const unreadDocumentsLength = this.documents.length - this.cursorIndex;
-    // const length = number < unreadDocumentsLength ? number : unreadDocumentsLength;
-    // let elements = this.documents.slice(this.cursorIndex, this.cursorIndex + length);
-
-    // // Transform the doc with passed in transformation method if provided
-    // if (this.transforms && typeof this.transforms.doc === 'function') {
-    //   // Transform all the elements
-    //   for (let i = 0; i < elements.length; i++) {
-    //     elements[i] = this.transforms.doc(elements[i]);
-    //   }
-    // }
-
-    // // Ensure we do not return any more documents than the limit imposed
-    // // Just return the number of elements up to the limit
-    // if (this._limit > 0 && this.currentLimit + elements.length > this._limit) {
-    //   elements = elements.slice(0, this._limit - this.currentLimit);
-    //   this.kill();
-    // }
-
-    // // Adjust current limit
-    // this.currentLimit = this.currentLimit + elements.length;
-    // this.cursorIndex = this.cursorIndex + elements.length;
-
-    // // Return elements
-    // return elements;
   }
 
   [Symbol.asyncIterator](): AsyncIterator<Document | null> {
@@ -163,8 +144,29 @@ export abstract class AbstractCursor extends EventEmitter {
     };
   }
 
-  stream(options?: CursorStreamOptions): AbstractCursorStream {
-    return new AbstractCursorStream(this, options);
+  stream(options?: CursorStreamOptions): Readable {
+    if (options?.transform) {
+      const transform = options.transform;
+      const readable = makeCursorStream(this);
+
+      return readable.pipe(
+        new Transform({
+          objectMode: true,
+          highWaterMark: 1,
+          transform(chunk, _, callback) {
+            try {
+              const transformed = transform(chunk);
+              callback(undefined, transformed);
+            } catch (err) {
+              callback(err);
+            }
+          }
+        })
+      );
+    }
+
+    return makeCursorStream(this);
+    // return Readable.from(this);
   }
 
   hasNext(): Promise<boolean>;
@@ -258,8 +260,7 @@ export abstract class AbstractCursor extends EventEmitter {
     if (typeof options === 'function') (callback = options), (options = {});
     options = options || {};
 
-    this.closed = true;
-
+    this[kClosed] = true;
     return maybePromise(callback, done => {
       const cursorId = this[kId];
       const cursorNs = this[kNamespace];
@@ -447,82 +448,6 @@ export interface ExecutionResult {
   response: Document;
 }
 
-const kCursor = Symbol('cursor');
-
-/** @public */
-export class AbstractCursorStream extends Readable {
-  [kCursor]: AbstractCursor;
-  options: CursorStreamOptions;
-  reading: boolean;
-
-  /** @event */
-  static readonly CLOSE = 'close' as const;
-  /** @event */
-  static readonly DATA = 'data' as const;
-  /** @event */
-  static readonly END = 'end' as const;
-  /** @event */
-  static readonly FINISH = 'finish' as const;
-  /** @event */
-  static readonly ERROR = 'error' as const;
-  /** @event */
-  static readonly PAUSE = 'pause' as const;
-  /** @event */
-  static readonly READABLE = 'readable' as const;
-  /** @event */
-  static readonly RESUME = 'resume' as const;
-
-  constructor(cursor: AbstractCursor, options?: CursorStreamOptions) {
-    super({ objectMode: true });
-    this[kCursor] = cursor;
-    this.options = options || {};
-  }
-
-  destroy(err?: AnyError): void {
-    this.pause();
-    this[kCursor].close();
-    super.destroy(err);
-  }
-
-  /** @internal */
-  _read(): void {
-    const cursor = this[kCursor];
-    // if ((cursor.s && cursor.s.state === CursorState.CLOSED) || cursor.isDead()) {
-    //   this.push(null);
-    //   return;
-    // }
-
-    // Get the next item
-    next(cursor, (err, result) => {
-      if (err) {
-        // if (cursor.s && cursor.s.state === CursorState.CLOSED) return;
-        // if (!cursor.isDead()) this.emit(CursorStream.ERROR, err);
-        // cursor.close(() => this.emit(CursorStream.END));
-
-        this.emit(AbstractCursorStream.ERROR, err);
-        this.emit(AbstractCursorStream.END);
-        return;
-      }
-
-      // If we provided a transformation method
-      if (typeof this.options.transform === 'function' && result != null) {
-        this.push(this.options.transform(result));
-        return;
-      }
-
-      // Return the result
-      this.push(result);
-
-      if (result === null /* && cursor.isDead() */) {
-        this.once(AbstractCursorStream.END, () => {
-          cursor.close();
-          this.emit(AbstractCursorStream.FINISH);
-        });
-      }
-    });
-  }
-}
-
 function nextDocument(cursor: AbstractCursor): Document | null | undefined {
   if (cursor[kDocuments] == null || !cursor[kDocuments].length) {
     return undefined;
@@ -545,6 +470,10 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
   const cursorId = cursor[kId];
   const cursorNs = cursor[kNamespace];
   const server = cursor[kServer];
+
+  if (cursor.closed) {
+    return callback(undefined, null);
+  }
 
   if (cursorId == null) {
     const session = cursor[kSession]
@@ -599,6 +528,9 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
   }
 
   if (cursorId.isZero() || cursorNs == null) {
+    cursor.emit(AbstractCursor.CLOSE);
+    cursor[kClosed] = true;
+
     const session = cursor[kSession];
     if (session && session.owner === cursor) {
       session.endSession(() => callback(undefined, null));
@@ -635,6 +567,11 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
       }
 
       if (err || (cursor.id && cursor.id.isZero())) {
+        if (cursor[kDocuments].length === 0) {
+          cursor.emit(AbstractCursor.CLOSE);
+          cursor[kClosed] = true;
+        }
+
         const session = cursor[kSession];
         if (session && session.owner === cursor) {
           session.endSession(() => callback(err, nextDocument(cursor)));
@@ -645,62 +582,77 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
         return;
       }
 
+      if (cursor[kDocuments].length === 0) {
+        cursor.emit(AbstractCursor.CLOSE);
+        cursor[kClosed] = true;
+      }
+
       callback(err, nextDocument(cursor));
     }
   );
 }
 
-// function makeCursorStream(cursor: AbstractCursor) {
-//   const readable = new Readable({
-//     objectMode: true,
-//     highWaterMark: 1
-//   });
+function makeCursorStream(cursor: AbstractCursor) {
+  const readable = new Readable({
+    objectMode: true,
+    highWaterMark: 1
+  });
 
-//   let reading = false;
-//   let needToClose = false;
+  let initialized = false;
+  let reading = false;
+  let needToClose = true; // NOTE: we must close the cursor if we never read from it, use `_construct` in future node versions
 
-//   readable._read = function () {
-//     if (!reading) {
-//       reading = true;
-//       readNext();
-//     }
-//   };
+  readable._read = function () {
+    if (initialized === false) {
+      needToClose = false;
+      initialized = true;
+    }
 
-//   readable._destroy = function (error, cb) {
-//     if (needToClose) {
-//       cursor.close(err => process.nextTick(cb, err));
-//     } else {
-//       cb(error);
-//     }
-//   };
+    if (!reading) {
+      reading = true;
+      readNext();
+    }
+  };
 
-//   function readNext() {
-//     needToClose = false;
-//     next(cursor, (err, result) => {
-//       if (err) {
-//         if (cursor.closed) {
-//           return readable.push(null);
-//         }
+  readable._destroy = function (error, cb) {
+    if (needToClose) {
+      cursor.close(err => process.nextTick(cb, err || error));
+    } else {
+      cb(error);
+    }
+  };
 
-//         return readable.destroy(err);
-//       }
+  function readNext() {
+    needToClose = false;
+    next(cursor, (err, result) => {
+      needToClose = result !== null;
 
-//       if (result === null) {
-//         // console.log('DONE READING');
-//         return readable.push(null);
-//       }
+      if (err) {
+        // NOTE: This is questionable, but we have a test backing the behavior. It seems the
+        //       desired behavior is that a stream ends cleanly when a user explicitly closes
+        //       a client during iteration. Alternatively, we could do the "right" thing and
+        //       propagate the error message by removing this special case.
+        if (err.message.match(/server is closed/)) {
+          cursor.close();
+          return readable.push(null);
+        }
 
-//       if (readable.destroyed) {
-//         return cursor.close();
-//       }
+        return readable.destroy(err);
+      }
 
-//       if (readable.push(result)) {
-//         return readNext();
-//       }
+      if (result === null) {
+        readable.push(null);
+      } else if (readable.destroyed) {
+        cursor.close();
+      } else {
+        if (readable.push(result)) {
+          return readNext();
+        }
 
-//       reading = false;
-//     });
-//   }
+        reading = false;
+      }
+    });
+  }
 
-//   return readable;
-// }
+  return readable;
+}

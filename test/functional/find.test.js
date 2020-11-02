@@ -1142,7 +1142,7 @@ describe('Find', function () {
         var db = client.db(configuration.db);
         db.createCollection('timeoutFalse', function (err, collection) {
           const cursor = collection.find({}, {});
-          test.ok(!cursor.cmd.noCursorTimeout);
+          test.ok(!cursor.options.noCursorTimeout);
           client.close(done);
         });
       });
@@ -2328,52 +2328,6 @@ describe('Find', function () {
         expect(options.limit).to.not.exist;
         test.equal('TEST', options.raw);
         client.close(done);
-      });
-    }
-  });
-
-  it('Should simulate closed cursor', {
-    // Add a tag that our runner can trigger on
-    // in this case we are setting that node needs to be higher than 0.10.X to run
-    metadata: { requires: { mongodb: '>2.5.5', topology: ['single', 'replicaset'] } },
-
-    test: function (done) {
-      var configuration = this.configuration;
-      var client = configuration.newClient(configuration.writeConcernMax(), { poolSize: 1 });
-      client.connect((err, client) => {
-        expect(err).to.not.exist;
-        this.defer(() => client.close());
-
-        const db = client.db(configuration.db);
-        const docs = [];
-        for (let i = 0; i < 1000; i++) {
-          docs.push({ a: i });
-        }
-
-        // Get the collection
-        const collection = db.collection('simulate_closed_cursor');
-        // Insert 1000 documents in a batch
-        collection.insert(docs, err => {
-          expect(err).to.not.exist;
-
-          // Get the cursor
-          var cursor = collection.find({}).batchSize(2);
-          this.defer(() => cursor.close());
-
-          // Get next document
-          cursor.next((err, doc) => {
-            expect(err).to.not.exist;
-            test.ok(doc != null);
-
-            // Mess with state forcing a call to isDead on the cursor
-            cursor.s.state = 2;
-
-            cursor.next(err => {
-              test.ok(err !== null);
-              done();
-            });
-          });
-        });
       });
     }
   });

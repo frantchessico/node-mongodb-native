@@ -56,8 +56,8 @@ export class FindCursor extends AbstractCursor {
 
     const findOperation = new FindOperation(undefined, this.ns, this[kFilter], {
       session,
-      ...options,
-      ...this.options
+      ...this.options, // NOTE: order matters here, we may need to refine this
+      ...options
     });
 
     executeOperation(this.topology, findOperation, (err, response) => {
