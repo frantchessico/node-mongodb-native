@@ -3460,7 +3460,7 @@ describe('Cursor', function () {
                 setTimeout(() => cursor.close(), 300);
               },
               err => {
-                expect(err).to.not.exist;
+                expect(err).to.exist;
                 test.ok(new Date().getTime() - s.getTime() >= 500);
                 done();
               }

@@ -32,7 +32,7 @@ export class CountOperation extends CommandOperation<CountOptions, number> {
   // hint: <hint>,
   // comment: <any>
   constructor(cursor: FindCursor, filter: Document, options: CountOptions) {
-    super(({ s: { namespace: cursor.ns } } as unknown) as Collection, options);
+    super(({ s: { namespace: cursor.namespace } } as unknown) as Collection, options);
 
     this.cursor = cursor;
     this.query = filter;
@@ -42,7 +42,7 @@ export class CountOperation extends CommandOperation<CountOptions, number> {
     const cursor = this.cursor;
     const options = this.options;
     const cmd: Document = {
-      count: cursor.ns.collection ?? '',
+      count: cursor.namespace.collection ?? '',
       query: this.query
     };
 

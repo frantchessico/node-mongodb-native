@@ -46,7 +46,7 @@ export abstract class AbstractCursor extends EventEmitter {
   [kId]?: Long;
   [kSession]?: ClientSession;
   [kServer]?: Server;
-  [kNamespace]?: MongoDBNamespace;
+  [kNamespace]: MongoDBNamespace;
   [kDocuments]: Document[];
   [kTopology]: Topology;
   [kTransform]?: (doc: Document) => Document;
@@ -69,10 +69,15 @@ export abstract class AbstractCursor extends EventEmitter {
   /** @event */
   static readonly CLOSE = 'close' as const;
 
-  constructor(topology: Topology, options: AbstractCursorOptions = {}) {
+  constructor(
+    topology: Topology,
+    namespace: MongoDBNamespace,
+    options: AbstractCursorOptions = {}
+  ) {
     super();
 
     this[kTopology] = topology;
+    this[kNamespace] = namespace;
     this[kDocuments] = []; // TODO: https://github.com/microsoft/TypeScript/issues/36230
     this[kClosed] = false;
     this[kOptions] = {
@@ -108,7 +113,7 @@ export abstract class AbstractCursor extends EventEmitter {
     return this[kTopology];
   }
 
-  get namespace(): MongoDBNamespace | undefined {
+  get namespace(): MongoDBNamespace {
     return this[kNamespace];
   }
 
@@ -501,7 +506,6 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
             typeof response.cursorId === 'number'
               ? Long.fromNumber(response.cursorId)
               : response.cursorId;
-          cursor[kNamespace] = state.namespace;
           cursor[kDocuments] = response.documents;
         }
       }

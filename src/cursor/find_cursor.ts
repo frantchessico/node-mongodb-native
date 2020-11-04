@@ -25,19 +25,17 @@ export const FLAGS = [
 ] as const;
 
 export class FindCursor extends AbstractCursor {
-  ns: MongoDBNamespace;
   [kFilter]: Document;
   options: FindOptions;
 
   constructor(
     topology: Topology,
-    ns: MongoDBNamespace,
+    namespace: MongoDBNamespace,
     filter: Document | undefined,
     options: FindOptions = {}
   ) {
-    super(topology, options);
+    super(topology, namespace, options);
 
-    this.ns = ns; // TEMPORARY
     this[kFilter] = filter || {};
     this.options = options;
 
@@ -54,7 +52,7 @@ export class FindCursor extends AbstractCursor {
   ): void {
     this.options = Object.freeze(this.options);
 
-    const findOperation = new FindOperation(undefined, this.ns, this[kFilter], {
+    const findOperation = new FindOperation(undefined, this.namespace, this[kFilter], {
       session,
       ...this.options, // NOTE: order matters here, we may need to refine this
       ...options
@@ -117,7 +115,7 @@ export class FindCursor extends AbstractCursor {
     // TODO: session?
     return executeOperation(
       this.topology,
-      new FindOperation(undefined, this.ns, this[kFilter], {
+      new FindOperation(undefined, this.namespace, this[kFilter], {
         explain: true,
         // session,
         ...this.options

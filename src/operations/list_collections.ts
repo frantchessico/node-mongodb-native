@@ -116,7 +116,7 @@ export class ListCollectionsCursor extends AbstractCursor {
   options?: ListCollectionsOptions;
 
   constructor(db: Db, filter: Document, options?: ListCollectionsOptions) {
-    super(db.s.topology, options);
+    super(db.s.topology, db.s.namespace, options);
     this.parent = db;
     this.filter = filter;
     this.options = options;

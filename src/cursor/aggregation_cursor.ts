@@ -4,7 +4,7 @@ import { executeOperation } from '../operations/execute_operation';
 import type { Document } from '../bson';
 import type { Sort } from '../sort';
 import type { Topology } from '../sdam/topology';
-import type { Callback } from '../utils';
+import type { Callback, MongoDBNamespace } from '../utils';
 import type { ClientSession } from '../sessions';
 import type { CursorOptions } from './cursor';
 import type { OperationParent } from '../operations/command';
@@ -29,10 +29,11 @@ export class AggregationCursor extends AbstractCursor {
   constructor(
     parent: OperationParent,
     topology: Topology,
+    namespace: MongoDBNamespace,
     pipeline: Document[] = [],
     options: AggregateOptions = {}
   ) {
-    super(topology, options);
+    super(topology, namespace, options);
 
     this.parent = parent;
     this.pipeline = pipeline;
