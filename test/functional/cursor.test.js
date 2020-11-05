@@ -280,7 +280,7 @@ describe('Cursor', function () {
 
         const db = client.db(configuration.db);
         const cursor = db.collection('countTEST').find({ qty: { $gt: 4 } });
-        cursor.count(true, { readPreference: ReadPreference.SECONDARY }, err => {
+        cursor.count({ readPreference: ReadPreference.SECONDARY }, err => {
           expect(err).to.not.exist;
 
           const selectedServerAddress = bag[0].address.replace('127.0.0.1', 'localhost');
@@ -371,103 +371,6 @@ describe('Cursor', function () {
             insert(function () {
               finished();
             });
-          });
-        });
-      });
-    }
-  });
-
-  it('shouldCorrectlyExecuteSortOnCursor', {
-    // Add a tag that our runner can trigger on
-    // in this case we are setting that node needs to be higher than 0.10.X to run
-    metadata: {
-      requires: { topology: ['single', 'replicaset', 'sharded', 'ssl', 'heap', 'wiredtiger'] }
-    },
-
-    test: function (done) {
-      const configuration = this.configuration;
-      const client = configuration.newClient(configuration.writeConcernMax(), { poolSize: 1 });
-      client.connect((err, client) => {
-        expect(err).to.not.exist;
-        this.defer(() => client.close());
-
-        const db = client.db(configuration.db);
-        db.createCollection('test_sort', (err, collection) => {
-          expect(err).to.not.exist;
-          function insert(callback) {
-            var total = 10;
-
-            for (var i = 0; i < 10; i++) {
-              collection.insert({ x: i }, configuration.writeConcernMax(), e => {
-                expect(e).to.not.exist;
-                total = total - 1;
-                if (total === 0) callback();
-              });
-            }
-          }
-
-          function f() {
-            var number_of_functions = 7;
-            var finished = function (cursor) {
-              number_of_functions = number_of_functions - 1;
-              if (number_of_functions === 0) {
-                cursor.close(done);
-              } else {
-                cursor.close();
-              }
-            };
-
-            var cursor = collection.find().sort(['a', 1]);
-            test.deepEqual({ a: 1 }, cursor.options.sort);
-            finished(cursor);
-
-            cursor = collection.find().sort('a', 1);
-            test.deepEqual({ a: 1 }, cursor.options.sort);
-            finished(cursor);
-
-            cursor = collection.find().sort('a', -1);
-            test.deepEqual({ a: -1 }, cursor.options.sort);
-            finished(cursor);
-
-            cursor = collection.find().sort('a', 'asc');
-            test.deepEqual({ a: 1 }, cursor.options.sort);
-            finished(cursor);
-
-            cursor = collection.find().sort('a', 1).sort('a', -1);
-            test.deepEqual({ a: -1 }, cursor.options.sort);
-            finished(cursor);
-
-            cursor = collection.find();
-            cursor.next(err => {
-              expect(err).to.not.exist;
-              expect(() => {
-                cursor.sort(['a']);
-              }).to.throw(/not extensible/);
-            });
-
-            cursor = collection.find();
-            try {
-              cursor.sort('a', 25);
-            } catch (err) {
-              test.equal('Invalid sort direction: 25', err.message);
-            }
-            cursor.next(() => {
-              finished(cursor);
-            });
-
-            cursor = collection.find();
-            try {
-              cursor.sort(25);
-            } catch (err) {
-              test.equal('Invalid sort format: 25', err.message);
-            }
-            cursor.next(() => {
-              finished(cursor);
-            });
-          }
-
-          insert(function () {
-            f();
           });
         });
       });
@@ -4239,7 +4142,6 @@ describe('Cursor', function () {
         db.collection('test_sort_dos', (err, collection) => {
           expect(err).to.not.exist;
           const cursor = collection.find({}, { sort: input });
-          expect(cursor).nested.property('options.sort').to.deep.equal(output);
           cursor.next(err => {
             expect(err).to.not.exist;
             expect(events[0].command.sort).to.deep.equal(output);
@@ -4254,7 +4156,6 @@ describe('Cursor', function () {
         db.collection('test_sort_dos', (err, collection) => {
           expect(err).to.not.exist;
           const cursor = collection.find({}).sort(input);
-          expect(cursor).nested.property('options.sort').to.deep.equal(output);
           cursor.next(err => {
             expect(err).to.not.exist;
             expect(events[0].command.sort).to.deep.equal(output);

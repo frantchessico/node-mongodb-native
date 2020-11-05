@@ -4,7 +4,6 @@ import { ClientSession } from '../sessions';
 import { MongoError } from '../error';
 import { ReadPreference, ReadPreferenceLike } from '../read_preference';
 import type { Server } from '../sdam/server';
-import type { CursorCloseOptions, CursorStreamOptions } from './cursor';
 import type { Topology } from '../sdam/topology';
 import { Readable, Transform } from 'stream';
 import { EventEmitter } from 'events';
@@ -18,6 +17,7 @@ const kSession = Symbol('session');
 const kOptions = Symbol('options');
 const kTransform = Symbol('transform');
 const kClosed = Symbol('closed');
+const kKilled = Symbol('killed');
 
 /** @internal */
 export const CURSOR_FLAGS = [
@@ -28,6 +28,18 @@ export const CURSOR_FLAGS = [
   'exhaust',
   'partial'
 ] as const;
+
+/** @public */
+export interface CursorCloseOptions {
+  /** Bypass calling killCursors when closing the cursor. */
+  skipKillCursors?: boolean;
+}
+
+/** @public */
+export interface CursorStreamOptions {
+  /** A transformation method applied to each document emitted by the stream */
+  transform?(doc: Document): Document;
+}
 
 /** @public */
 export type CursorFlag = typeof CURSOR_FLAGS[number];
@@ -51,6 +63,7 @@ export abstract class AbstractCursor extends EventEmitter {
   [kTopology]: Topology;
   [kTransform]?: (doc: Document) => Document;
   [kClosed]: boolean;
+  [kKilled]: boolean;
   [kOptions]: {
     readPreference: ReadPreference;
     batchSize?: number;
@@ -80,6 +93,7 @@ export abstract class AbstractCursor extends EventEmitter {
     this[kNamespace] = namespace;
     this[kDocuments] = []; // TODO: https://github.com/microsoft/TypeScript/issues/36230
     this[kClosed] = false;
+    this[kKilled] = false;
     this[kOptions] = {
       readPreference:
         options.readPreference && options.readPreference instanceof ReadPreference
@@ -113,6 +127,10 @@ export abstract class AbstractCursor extends EventEmitter {
     return this[kTopology];
   }
 
+  get server(): Server | undefined {
+    return this[kServer];
+  }
+
   get namespace(): MongoDBNamespace {
     return this[kNamespace];
   }
@@ -123,6 +141,10 @@ export abstract class AbstractCursor extends EventEmitter {
 
   get closed(): boolean {
     return this[kClosed];
+  }
+
+  get killed(): boolean {
+    return this[kKilled];
   }
 
   // NOTE: should we remove these? They are currently needed by a number of tests
@@ -137,7 +159,7 @@ export abstract class AbstractCursor extends EventEmitter {
 
   /** Returns current buffered documents */
   readBufferedDocuments(number: number): Document[] {
-    return this[kDocuments].slice(0, number);
+    return this[kDocuments].splice(0, number);
   }
 
   [Symbol.asyncIterator](): AsyncIterator<Document | null> {
@@ -171,7 +193,6 @@ export abstract class AbstractCursor extends EventEmitter {
     }
 
     return makeCursorStream(this);
-    // return Readable.from(this);
   }
 
   hasNext(): Promise<boolean>;
@@ -279,6 +300,7 @@ export abstract class AbstractCursor extends EventEmitter {
       }
 
       // TODO: bson options
+      this[kKilled] = true;
       server.killCursors(cursorNs.toString(), [cursorId], { session }, () => {
         if (session && session.owner === this) {
           return session.endSession(() => {
@@ -439,6 +461,34 @@ export abstract class AbstractCursor extends EventEmitter {
     options: AbstractCursorOptions,
     callback: Callback<ExecutionResult>
   ): void;
+
+  /* @internal */
+  _getMore(batchSize: number, callback: Callback<Document>): void {
+    const cursorId = this[kId];
+    const cursorNs = this[kNamespace];
+    const server = this[kServer];
+
+    if (cursorId == null) {
+      callback(new MongoError('Unable to iterate cursor with no id'));
+      return;
+    }
+
+    if (server == null) {
+      callback(new MongoError('Unable to iterate cursor without selected server'));
+      return;
+    }
+
+    server.getMore(
+      cursorNs.toString(),
+      cursorId,
+      {
+        ...this[kOptions],
+        session: this[kSession],
+        batchSize
+      },
+      callback
+    );
+  }
 }
 
 /* @internal */
@@ -447,15 +497,13 @@ export interface ExecutionResult {
   server: Server;
   /** The session used for this operation, may be implicitly created */
   session?: ClientSession;
-  /** The namespace for the operation, this is only needed for pre-3.2 servers which don't use commands */
-  namespace: MongoDBNamespace;
   /** The raw server response for the operation */
   response: Document;
 }
 
 function nextDocument(cursor: AbstractCursor): Document | null | undefined {
   if (cursor[kDocuments] == null || !cursor[kDocuments].length) {
-    return undefined;
+    return null;
   }
 
   const doc = cursor[kDocuments].shift();
@@ -474,10 +522,22 @@ function nextDocument(cursor: AbstractCursor): Document | null | undefined {
 function next(cursor: AbstractCursor, callback: Callback<Document | null>): void {
   const cursorId = cursor[kId];
   const cursorNs = cursor[kNamespace];
-  const server = cursor[kServer];
 
   if (cursor.closed) {
-    return callback(undefined, null);
+    // TODO: hmm, this logic to end sessions is triplicated now
+    const session = cursor[kSession];
+    if (session && session.owner === cursor) {
+      session.endSession(() => callback(undefined, null));
+    } else {
+      callback(undefined, null);
+    }
+
+    return;
+  }
+
+  if (cursor[kDocuments] && cursor[kDocuments].length) {
+    callback(undefined, nextDocument(cursor));
+    return;
   }
 
   if (cursorId == null) {
@@ -498,7 +558,11 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
             typeof response.cursor.id === 'number'
               ? Long.fromNumber(response.cursor.id)
               : response.cursor.id;
-          cursor[kNamespace] = MongoDBNamespace.fromString(response.cursor.ns);
+
+          if (response.cursor.ns) {
+            cursor[kNamespace] = MongoDBNamespace.fromString(response.cursor.ns);
+          }
+
           cursor[kDocuments] = response.cursor.firstBatch;
         } else {
           // NOTE: This is for support of older servers (<3.2) which do not use commands
@@ -507,6 +571,12 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
               ? Long.fromNumber(response.cursorId)
               : response.cursorId;
           cursor[kDocuments] = response.documents;
+        }
+
+        // TODO: We must be much stricter about server responses, otherwise we can end up
+        //       in a VERY tight loop infinitely iterating over values which will never change.
+        if (cursor[kId] == null) {
+          throw new MongoError('invalid server response for cursor initialization');
         }
       }
 
@@ -520,14 +590,9 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
         return;
       }
 
-      callback(err, nextDocument(cursor));
+      next(cursor, callback);
     });
 
-    return;
-  }
-
-  if (cursor[kDocuments].length) {
-    callback(undefined, nextDocument(cursor));
     return;
   }
 
@@ -546,54 +611,41 @@ function next(cursor: AbstractCursor, callback: Callback<Document | null>): void
   }
 
   // otherwise need to call getMore
-  if (server == null) {
-    callback(new MongoError('unable to iterate cursor without pinned server'));
-    return;
-  }
+  const batchSize = cursor[kOptions].batchSize || 1000;
+  cursor._getMore(batchSize, (err, response) => {
+    if (response) {
+      const cursorId =
+        typeof response.cursor.id === 'number'
+          ? Long.fromNumber(response.cursor.id)
+          : response.cursor.id;
 
-  server.getMore(
-    cursorNs.toString(),
-    cursorId,
-    {
-      session: cursor[kSession],
-      ...cursor[kOptions],
-      batchSize: cursor[kOptions].batchSize || 1000 // TODO: there should be no default here
-    },
-    (err, response) => {
-      if (response) {
-        const cursorId =
-          typeof response.cursor.id === 'number'
-            ? Long.fromNumber(response.cursor.id)
-            : response.cursor.id;
+      cursor[kDocuments] = response.cursor.nextBatch;
+      cursor[kId] = cursorId;
+    }
 
-        cursor[kDocuments] = response.cursor.nextBatch;
-        cursor[kId] = cursorId;
-      }
-
-      if (err || (cursor.id && cursor.id.isZero())) {
-        if (cursor[kDocuments].length === 0) {
-          cursor.emit(AbstractCursor.CLOSE);
-          cursor[kClosed] = true;
-        }
-
-        const session = cursor[kSession];
-        if (session && session.owner === cursor) {
-          session.endSession(() => callback(err, nextDocument(cursor)));
-        } else {
-          callback(err, nextDocument(cursor));
-        }
-
-        return;
-      }
-
+    if (err || (cursor.id && cursor.id.isZero())) {
       if (cursor[kDocuments].length === 0) {
         cursor.emit(AbstractCursor.CLOSE);
         cursor[kClosed] = true;
       }
 
-      callback(err, nextDocument(cursor));
+      const session = cursor[kSession];
+      if (session && session.owner === cursor) {
+        session.endSession(() => callback(err, nextDocument(cursor)));
+      } else {
+        callback(err, nextDocument(cursor));
+      }
+
+      return;
     }
-  );
+
+    if (cursor[kDocuments].length === 0) {
+      cursor.emit(AbstractCursor.CLOSE);
+      cursor[kClosed] = true;
+    }
+
+    next(cursor, callback);
+  });
 }
 
 function makeCursorStream(cursor: AbstractCursor) {
@@ -629,7 +681,7 @@ function makeCursorStream(cursor: AbstractCursor) {
   function readNext() {
     needToClose = false;
     next(cursor, (err, result) => {
-      needToClose = result !== null;
+      needToClose = err ? !cursor.closed : result !== null;
 
       if (err) {
         // NOTE: This is questionable, but we have a test backing the behavior. It seems the
@@ -638,6 +690,13 @@ function makeCursorStream(cursor: AbstractCursor) {
         //       propagate the error message by removing this special case.
         if (err.message.match(/server is closed/)) {
           cursor.close();
+          return readable.push(null);
+        }
+
+        // NOTE: This is also perhaps questionable. The rationale here is that these errors tend
+        //       to be "operation interrupted", where a cursor has been closed but there is an
+        //       active getMore in-flight.
+        if (cursor.killed) {
           return readable.push(null);
         }
 

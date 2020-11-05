@@ -1130,25 +1130,6 @@ describe('Find', function () {
     }
   });
 
-  it('Should correctly pass timeout options to cursor noCursorTimeout', {
-    metadata: {
-      requires: { topology: ['single', 'replicaset', 'sharded', 'ssl', 'heap', 'wiredtiger'] }
-    },
-
-    test: function (done) {
-      var configuration = this.configuration;
-      var client = configuration.newClient(configuration.writeConcernMax(), { poolSize: 1 });
-      client.connect(function (err, client) {
-        var db = client.db(configuration.db);
-        db.createCollection('timeoutFalse', function (err, collection) {
-          const cursor = collection.find({}, {});
-          test.ok(!cursor.options.noCursorTimeout);
-          client.close(done);
-        });
-      });
-    }
-  });
-
   it(
     'should support a timeout option for find operations',
     withMonitoredClient(['find'], function (client, events, done) {

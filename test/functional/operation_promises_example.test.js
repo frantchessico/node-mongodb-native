@@ -1517,7 +1517,7 @@ describe('Operation (Promises)', function () {
     test: function () {
       var configuration = this.configuration;
       var client = configuration.newClient(
-        { w: 0, native_parser: false },
+        { native_parser: false },
         { poolSize: 1, auto_reconnect: false }
       );
 
@@ -5004,7 +5004,8 @@ describe('Operation (Promises)', function () {
                 cursor.close();
               }
             });
-            stream.on('end', function () {
+
+            cursor.on('close', function () {
               // TODO: forced because the cursor is still open/active
               client.close(true, done);
             });

@@ -3,7 +3,6 @@ import type { AnyError } from '../error';
 import type { Document } from '../bson';
 import type { FindOptions } from '../operations/find';
 import type { Sort } from '../sort';
-import type { Cursor } from './../cursor/cursor';
 import type { Callback } from '../utils';
 import type { Collection } from '../collection';
 import type { ReadPreference } from '../read_preference';
@@ -47,7 +46,7 @@ export interface GridFSBucketReadStreamPrivate {
   bytesToTrim: number;
   bytesToSkip: number;
   chunks: Collection;
-  cursor?: Cursor | FindCursor;
+  cursor?: FindCursor;
   expected: number;
   files: Collection;
   filter: Document;
@@ -204,7 +203,7 @@ function doRead(stream: GridFSBucketReadStream): void {
   if (!stream.s.cursor) return;
   if (!stream.s.file) return;
 
-  stream.s.cursor.next((error?: Error, doc?: Document) => {
+  stream.s.cursor.next((error, doc) => {
     if (stream.destroyed) {
       return;
     }
@@ -422,7 +421,7 @@ function handleStartOption(
 function handleEndOption(
   stream: GridFSBucketReadStream,
   doc: Document,
-  cursor: Cursor | FindCursor,
+  cursor: FindCursor,
   options: GridFSBucketReadStreamOptions
 ) {
   if (options && options.end != null) {

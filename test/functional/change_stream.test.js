@@ -1841,45 +1841,6 @@ describe('Change Streams', function () {
     }
   });
 
-  it('should emit close event after error event', {
-    metadata: { requires: { topology: 'replicaset', mongodb: '>=3.6' } },
-    test: function (done) {
-      const configuration = this.configuration;
-      const client = configuration.newClient();
-
-      client.connect((err, client) => {
-        expect(err).to.not.exist;
-        this.defer(() => client.close());
-
-        const db = client.db('integration_tests');
-        const coll = db.collection('event_test');
-
-        // This will cause an error because the _id will be projected out, which causes the following error:
-        // "A change stream document has been received that lacks a resume token (_id)."
-        const changeStream = coll.watch([{ $project: { _id: false } }]);
-        changeStream.on('change', changeDoc => {
-          expect(changeDoc).to.be.null;
-        });
-
-        let errored = false;
-        changeStream.on('error', err => {
-          expect(err).to.exist;
-          errored = true;
-        });
-
-        changeStream.once('close', () => {
-          expect(errored).to.be.true;
-          done();
-        });
-
-        // Trigger the first database event
-        waitForStarted(changeStream, () => {
-          this.defer(coll.insertOne({ a: 1 }));
-        });
-      });
-    }
-  });
-
   describe('should properly handle a changeStream event being processed mid-close', function () {
     let client, coll, changeStream;
 
@@ -2201,10 +2162,10 @@ describe('Change Streams', function () {
       it('must return the postBatchResumeToken from the current command response', function () {
         const manager = new MockServerManager(this.configuration, {
           aggregate: (function* () {
-            yield { numDocuments: 0, postBatchResumeToken: true };
+            yield { numDocuments: 0, postBatchResumeToken: true, cursor: { firstBatch: [] } };
           })(),
           getMore: (function* () {
-            yield { numDocuments: 1, postBatchResumeToken: true };
+            yield { numDocuments: 1, postBatchResumeToken: true, cursor: { nextBatch: [{}] } };
           })()
         });
 
@@ -2804,7 +2765,6 @@ describe('Change Stream Resume Error Tests', function () {
       const bucket = [];
       d.on('data', data => {
         bucket.push(data.fullDocument.x);
-        console.log({ bucket });
         if (bucket.length === 2) {
           expect(bucket[0]).to.be(1);
           expect(bucket[0]).to.be(2);
@@ -2817,7 +2777,6 @@ describe('Change Stream Resume Error Tests', function () {
           expect(err).to.not.exist;
           expect(result).to.exist;
           triggerResumableError(changeStream, 250, () => {
-            console.log('triggered error');
             collection.insertOne({ x: 2 }, (err, result) => {
               expect(err).to.not.exist;
               expect(result).to.exist;

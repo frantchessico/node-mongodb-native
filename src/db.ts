@@ -9,7 +9,7 @@ import {
   getTopology
 } from './utils';
 import { loadAdmin } from './dynamic_loaders';
-import { AggregationCursor } from './cursor';
+import { AggregationCursor } from './cursor/aggregation_cursor';
 import { ObjectId, Code, Document, BSONSerializeOptions, resolveBSONOptions } from './bson';
 import { ReadPreference, ReadPreferenceLike } from './read_preference';
 import { MongoError } from './error';
@@ -780,7 +780,7 @@ export class Db implements OperationParent {
       pipeline = [];
     }
 
-    return new ChangeStream(this, pipeline, options);
+    return new ChangeStream(this, pipeline, resolveOptions(this, options));
   }
 
   /** Return the db logger */

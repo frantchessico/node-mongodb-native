@@ -35,7 +35,7 @@ describe('AbstractCursor', function () {
         client.on('commandStarted', filterForCommands(['getMore'], commands));
 
         const coll = client.db().collection('find_cursor');
-        const cursor = coll.findWithFindCursor({}, { batchSize: 2 });
+        const cursor = coll.find({}, { batchSize: 2 });
         this.defer(() => cursor.close());
 
         cursor.toArray((err, docs) => {
@@ -56,7 +56,7 @@ describe('AbstractCursor', function () {
         client.on('commandStarted', filterForCommands(['killCursors'], commands));
 
         const coll = client.db().collection('find_cursor');
-        const cursor = coll.findWithFindCursor({}, { batchSize: 2 });
+        const cursor = coll.find({}, { batchSize: 2 });
         cursor.next(err => {
           expect(err).to.not.exist;
           cursor.close(err => {
@@ -75,7 +75,7 @@ describe('AbstractCursor', function () {
         client.on('commandStarted', filterForCommands(['killCursors'], commands));
 
         const coll = client.db().collection('find_cursor');
-        const cursor = coll.findWithFindCursor({}, { batchSize: 2 });
+        const cursor = coll.find({}, { batchSize: 2 });
         cursor.toArray(err => {
           expect(err).to.not.exist;
 
@@ -95,7 +95,7 @@ describe('AbstractCursor', function () {
         client.on('commandStarted', filterForCommands(['killCursors'], commands));
 
         const coll = client.db().collection('find_cursor');
-        const cursor = coll.findWithFindCursor({}, { batchSize: 2 });
+        const cursor = coll.find({}, { batchSize: 2 });
         cursor.close(err => {
           expect(err).to.not.exist;
           expect(commands).to.have.length(0);
@@ -110,7 +110,7 @@ describe('AbstractCursor', function () {
       'should iterate each document in a cursor',
       withClientV2(function (client, done) {
         const coll = client.db().collection('find_cursor');
-        const cursor = coll.findWithFindCursor({}, { batchSize: 2 });
+        const cursor = coll.find({}, { batchSize: 2 });
 
         const bag = [];
         cursor.forEach(

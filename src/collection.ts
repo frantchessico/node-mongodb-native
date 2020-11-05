@@ -16,7 +16,7 @@ import { OrderedBulkOperation } from './bulk/ordered';
 import { ChangeStream, ChangeStreamOptions } from './change_stream';
 import { WriteConcern, WriteConcernOptions } from './write_concern';
 import { ReadConcern, ReadConcernLike } from './read_concern';
-import { AggregationCursor } from './cursor';
+import { AggregationCursor } from './cursor/aggregation_cursor';
 import type { AggregateOptions } from './operations/aggregate';
 import { BulkWriteOperation } from './operations/bulk_write';
 import { CountDocumentsOperation, CountDocumentsOptions } from './operations/count_documents';
@@ -651,25 +651,6 @@ export class Collection implements OperationParent {
   }
 
   /**
-   * Creates a cursor for a query that can be used to iterate over results from MongoDB
-   *
-   * @param filter - The query predicate. If unspecified, then all documents in the collection will match the predicate
-   */
-  findWithFindCursor(): FindCursor;
-  findWithFindCursor(filter: Document): FindCursor;
-  findWithFindCursor(filter: Document, options: FindOptions): FindCursor;
-  findWithFindCursor(filter?: Document, options?: FindOptions): FindCursor {
-    if (arguments.length > 2) {
-      throw new TypeError('Third parameter to `collection.find()` must be undefined');
-    }
-    if (typeof options === 'function') {
-      throw new TypeError('`options` parameter must not be function');
-    }
-
-    return new FindCursor(getTopology(this), this.s.namespace, filter, options);
-  }
-
-  /**
    * Returns the options of the collection.
    *
    * @param options - Optional settings for the command
@@ -1257,7 +1238,7 @@ export class Collection implements OperationParent {
       pipeline = [];
     }
 
-    return new ChangeStream(this, pipeline, options);
+    return new ChangeStream(this, pipeline, resolveOptions(this, options));
   }
 
   /**

@@ -340,7 +340,7 @@ describe('Collation', function () {
           request.reply(primary[0]);
         } else if (doc.find) {
           commandResult = doc;
-          request.reply({ ok: 1 });
+          request.reply({ ok: 1, cursor: { id: 0, firstBatch: [] } });
         } else if (doc.endSessions) {
           request.reply({ ok: 1 });
         }
@@ -376,7 +376,7 @@ describe('Collation', function () {
           request.reply(primary[0]);
         } else if (doc.find) {
           commandResult = doc;
-          request.reply({ ok: 1 });
+          request.reply({ ok: 1, cursor: { id: 0, firstBatch: [] } });
         } else if (doc.endSessions) {
           request.reply({ ok: 1 });
         }
@@ -414,7 +414,7 @@ describe('Collation', function () {
           request.reply(primary[0]);
         } else if (doc.find) {
           commandResult = doc;
-          request.reply({ ok: 1 });
+          request.reply({ ok: 1, cursor: { id: 0, firstBatch: [] } });
         } else if (doc.endSessions) {
           request.reply({ ok: 1 });
         }

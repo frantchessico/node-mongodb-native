@@ -4628,7 +4628,7 @@ describe('Operation (Generators)', function () {
             }
           });
 
-          stream.on('end', function () {
+          cursor.on('close', function () {
             // TODO: forced because the cursor is still open/active
             client.close(true, err => {
               if (err) return reject(err);

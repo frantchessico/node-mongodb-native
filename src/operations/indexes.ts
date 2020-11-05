@@ -1,7 +1,13 @@
 import { indexInformation, IndexInformationOptions } from './common_functions';
 import { OperationBase, Aspect, defineAspects } from './operation';
 import { MongoError } from '../error';
-import { maxWireVersion, parseIndexOptions, MongoDBNamespace, Callback } from '../utils';
+import {
+  maxWireVersion,
+  parseIndexOptions,
+  MongoDBNamespace,
+  Callback,
+  getTopology
+} from '../utils';
 import { CommandOperation, CommandOperationOptions, OperationParent } from './command';
 import { ReadPreference } from '../read_preference';
 import type { Server } from '../sdam/server';
@@ -358,7 +364,7 @@ export class ListIndexesCursor extends AbstractCursor {
   options?: ListIndexesOptions;
 
   constructor(collection: Collection, options?: ListIndexesOptions) {
-    super(collection.s.topology, collection.s.namespace, options);
+    super(getTopology(collection), collection.s.namespace, options);
     this.parent = collection;
     this.options = options;
   }
@@ -375,13 +381,12 @@ export class ListIndexesCursor extends AbstractCursor {
       ...this.options
     });
 
-    executeOperation(this.parent.s.topology, operation, (err, response) => {
+    executeOperation(getTopology(this.parent), operation, (err, response) => {
       if (err || response == null) return callback(err);
 
       // NOTE: `executeOperation` should be improved to allow returning an intermediate
       //       representation including the selected server, session, and server response.
       callback(undefined, {
-        namespace: operation.ns,
         server: operation.server,
         session,
         response

@@ -6,12 +6,11 @@ import type { Sort } from '../sort';
 import type { Topology } from '../sdam/topology';
 import type { Callback, MongoDBNamespace } from '../utils';
 import type { ClientSession } from '../sessions';
-import type { CursorOptions } from './cursor';
 import type { OperationParent } from '../operations/command';
 import type { AbstractCursorOptions } from './abstract_cursor';
 
 /** @public */
-export interface AggregationCursorOptions extends CursorOptions, AggregateOptions {}
+export interface AggregationCursorOptions extends AbstractCursorOptions, AggregateOptions {}
 
 /**
  * The **AggregationCursor** class is an internal class that embodies an aggregation cursor on MongoDB
@@ -58,7 +57,6 @@ export class AggregationCursor extends AbstractCursor {
       // NOTE: `executeOperation` should be improved to allow returning an intermediate
       //       representation including the selected server, session, and server response.
       callback(undefined, {
-        namespace: aggregateOperation.ns,
         server: aggregateOperation.server,
         session,
         response

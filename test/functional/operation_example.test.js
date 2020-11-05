@@ -6732,7 +6732,7 @@ describe('Operation Examples', function () {
                 }
               });
 
-              stream.on('end', function () {
+              cursor.on('close', function () {
                 client.close(done);
               });
             });
