@@ -43,7 +43,15 @@ export function query(
   }
 
   const readPreference = getReadPreference(cmd, options);
-  const findCmd = prepareFindCommand(server, ns, cmd);
+  let findCmd = prepareFindCommand(server, ns, cmd);
+
+  // If we have explain, we need to rewrite the find command
+  // to wrap it in the explain command
+  if (typeof options.explain === 'boolean' && options.explain === true) {
+    findCmd = {
+      explain: findCmd
+    };
+  }
 
   // NOTE: This actually modifies the passed in cmd, and our code _depends_ on this
   //       side-effect. Change this ASAP
@@ -192,10 +200,15 @@ function prepareLegacyFindQuery(
   if (cmd.maxScan) findCmd['$maxScan'] = cmd.maxScan;
   if (cmd.min) findCmd['$min'] = cmd.min;
   if (cmd.max) findCmd['$max'] = cmd.max;
-  if (typeof cmd.showDiskLoc !== 'undefined') findCmd['$showDiskLoc'] = cmd.showDiskLoc;
+  if (typeof cmd.showDiskLoc !== 'undefined') {
+    findCmd['$showDiskLoc'] = cmd.showDiskLoc;
+  } else if (typeof cmd.showRecordId !== 'undefined') {
+    findCmd['$showDiskLoc'] = cmd.showRecordId;
+  }
+
   if (cmd.comment) findCmd['$comment'] = cmd.comment;
   if (cmd.maxTimeMS) findCmd['$maxTimeMS'] = cmd.maxTimeMS;
-  if (cmd.explain) {
+  if (options.explain) {
     // nToReturn must be 0 (match all) or negative (match N and close cursor)
     // nToReturn > 0 will give explain results equivalent to limit(0)
     numberToReturn = -Math.abs(cmd.limit || 0);

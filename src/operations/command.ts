@@ -70,10 +70,14 @@ export abstract class CommandOperation<
         : new MongoDBNamespace('admin', '$cmd');
     }
 
-    this.readConcern = ReadConcern.fromOptions(options);
-    this.writeConcern = WriteConcern.fromOptions(options);
+    if (typeof options?.explain === 'boolean') {
+      this.explain = options.explain;
+    } else {
+      this.explain = false;
+      this.readConcern = ReadConcern.fromOptions(options);
+      this.writeConcern = WriteConcern.fromOptions(options);
+    }
 
-    this.explain = false;
     this.fullResponse =
       options && typeof options.fullResponse === 'boolean' ? options.fullResponse : false;
 

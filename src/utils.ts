@@ -17,7 +17,6 @@ import { resolve } from 'path';
 import { Document, resolveBSONOptions } from './bson';
 import type { IndexSpecification, IndexDirection } from './operations/indexes';
 import type { MongoClient } from './mongo_client';
-import type { Cursor } from './cursor/cursor';
 import type { CommandOperationOptions, OperationParent } from './operations/command';
 import { ReadPreference } from './read_preference';
 
@@ -404,7 +403,7 @@ export function isPromiseLike<T = any>(
  */
 export function decorateWithCollation(
   command: Document,
-  target: MongoClient | Db | Collection | Cursor,
+  target: MongoClient | Db | Collection,
   options: AnyOptions
 ): void {
   const capabilities = getTopology(target).capabilities();
@@ -447,7 +446,7 @@ export function decorateWithReadConcern(
  * if the topology cannot be found.
  * @internal
  */
-export function getTopology(provider: MongoClient | Db | Collection | Cursor): Topology {
+export function getTopology(provider: MongoClient | Db | Collection): Topology {
   if (`topology` in provider && provider.topology) {
     return provider.topology;
   } else if ('client' in provider.s && provider.s.client.topology) {
