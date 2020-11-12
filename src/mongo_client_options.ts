@@ -1,8 +1,8 @@
-import type { MongoCredentials } from './cmap/auth/mongo_credentials';
-import type { MongoClientOptions } from './mongo_client';
-import type { ReadConcern } from './read_concern';
-import type { ReadPreference } from './read_preference';
-import type { WriteConcern } from './write_concern';
+import { MongoCredentials } from './cmap/auth/mongo_credentials';
+import type { MongoClientOptions, PkFactory } from './mongo_client';
+import { ReadConcern, ReadConcernLevel } from './read_concern';
+import { ReadPreference, ReadPreferenceMode } from './read_preference';
+import { W, WriteConcern } from './write_concern';
 
 import type { ConnectionOptions as TLSConnectionOptions } from 'tls';
 import type { TcpSocketConnectOpts as ConnectionOptions } from 'net';
@@ -11,6 +11,7 @@ import { MongoParseError } from './error';
 import { URL } from 'url';
 import { AuthMechanismEnum } from './cmap/auth/defaultAuthProviders';
 import type { TagSet } from './sdam/server_description';
+import { Logger, LoggerLevel } from './logger';
 
 /**
  * Mongo Client Options
@@ -285,7 +286,7 @@ interface OptionDescriptor {
 export const OPTIONS: Record<keyof MongoClientOptions, OptionDescriptor> = {
   appName: {
     rename: 'driverInfo',
-    transform({ options, values: [value] }): DriverInfo {
+    transform({ options, values: [value] }) {
       return { ...options.driverInfo, name: String(value) };
     }
   },
