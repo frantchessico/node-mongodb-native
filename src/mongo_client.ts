@@ -18,7 +18,7 @@ import type { Topology } from './sdam/topology';
 import type { ClientSession, ClientSessionOptions } from './sessions';
 import type { OperationParent } from './operations/command';
 import type { TagSet } from './sdam/server_description';
-import type { MongoOptions } from './mongo_client_options';
+import { MongoOptions, parseOptions } from './mongo_client_options';
 
 /** @public */
 export const LogLevelEnum = {
@@ -112,6 +112,7 @@ export interface MongoURIOptions extends Pick<WriteConcernOptions, 'journal' | '
     SERVICE_NAME?: string;
     CANONICALIZE_HOST_NAME?: boolean;
     SERVICE_REALM?: string;
+    [key: string]: any;
   };
   /** Set the Kerberos service name when connecting to Kerberized MongoDB instances. This value must match the service name set on MongoDB instances to which you are connecting. */
   gssapiServiceName?: string;
@@ -289,7 +290,7 @@ export class MongoClient extends EventEmitter implements OperationParent {
     this.originalUri = url;
     this.originalOptions = options;
 
-    // this.options = parseOptions(url, options);
+    this.options = parseOptions(url, options);
 
     // The internal state
     this.s = {
