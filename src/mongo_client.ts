@@ -9,7 +9,7 @@ import { deprecate } from 'util';
 import { connect, validOptions } from './operations/connect';
 import { PromiseProvider } from './promise_provider';
 import { Logger } from './logger';
-import { ReadConcern, ReadConcernLevelLike, ReadConcernLike } from './read_concern';
+import { ReadConcern, ReadConcernLevel, ReadConcernLike } from './read_concern';
 import { BSONSerializeOptions, Document, resolveBSONOptions } from './bson';
 import type { AutoEncryptionOptions } from './deps';
 import type { CompressorName } from './cmap/wire_protocol/compression';
@@ -18,15 +18,18 @@ import type { Topology } from './sdam/topology';
 import type { ClientSession, ClientSessionOptions } from './sessions';
 import type { OperationParent } from './operations/command';
 import type { TagSet } from './sdam/server_description';
-import { MongoOptions, parseOptions } from './mongo_client_options';
+import type { MongoOptions } from './mongo_client_options';
 
 /** @public */
-export enum LogLevel {
-  'error' = 'error',
-  'warn' = 'warn',
-  'info' = 'info',
-  'debug' = 'debug'
-}
+export const LogLevelEnum = {
+  error: 'error',
+  warn: 'warn',
+  info: 'info',
+  debug: 'debug'
+} as const;
+
+/** @public */
+export type LogLevel = typeof LogLevelEnum[keyof typeof LogLevelEnum];
 
 /** @public */
 export interface DriverInfo {
@@ -93,7 +96,7 @@ export interface MongoURIOptions extends Pick<WriteConcernOptions, 'journal' | '
   /** The maximum time in milliseconds that a thread can wait for a connection to become available. */
   waitQueueTimeoutMS?: number;
   /** The level of isolation */
-  readConcernLevel?: ReadConcernLevelLike;
+  readConcernLevel?: ReadConcernLevel;
   /** Specifies the read preferences for this connection */
   readPreference?: ReadPreferenceMode | ReadPreference;
   /** Specifies, in seconds, how stale a secondary can be before the client stops using it for read operations. */
@@ -120,7 +123,7 @@ export interface MongoURIOptions extends Pick<WriteConcernOptions, 'journal' | '
   serverSelectionTryOnce?: boolean;
   /** heartbeatFrequencyMS controls when the driver checks the state of the MongoDB deployment. Specify the interval (in milliseconds) between checks, counted from the end of the previous check until the beginning of the next one. */
   heartbeatFrequencyMS?: number;
-  /** Specify a custom app name. */
+  /** The name of the application that created this MongoClient instance. MongoDB 3.4 and newer will print this value in the server log upon establishing each connection. It is also recorded in the slow query log and profile collections */
   appName?: string;
   /** Enables retryable reads. */
   retryReads?: boolean;
@@ -140,15 +143,15 @@ export interface MongoClientOptions
   /** Validate mongod server certificate against Certificate Authority */
   sslValidate?: boolean;
   /** SSL Certificate store binary buffer. */
-  sslCA?: Buffer;
+  sslCA?: string | Buffer | Array<string | Buffer>;
   /** SSL Certificate binary buffer. */
-  sslCert?: Buffer;
+  sslCert?: string | Buffer | Array<string | Buffer>;
   /** SSL Key file binary buffer. */
-  sslKey?: Buffer;
+  sslKey?: string | Buffer | Array<string | Buffer>;
   /** SSL Certificate pass phrase. */
   sslPass?: string;
   /** SSL Certificate revocation list binary buffer. */
-  sslCRL?: Buffer;
+  sslCRL?: string | Buffer | Array<string | Buffer>;
   /** Ensure we check server identify during SSL, set to false to disable checking. */
   checkServerIdentity?: boolean | ((hostname: string, cert: Document) => Error | undefined);
   /** TCP Connection no delay */
@@ -185,8 +188,6 @@ export interface MongoClientOptions
   domainsEnabled?: boolean;
   /** Validate MongoClient passed in options for correctness */
   validateOptions?: boolean;
-  /** The name of the application that created this MongoClient instance. MongoDB 3.4 and newer will print this value in the server log upon establishing each connection. It is also recorded in the slow query log and profile collections */
-  appname?: MongoURIOptions['appName'];
   /** The auth settings for when connection to server. */
   auth?: Auth;
   /** Type of compression to use?: snappy or zlib */
@@ -197,10 +198,6 @@ export interface MongoClientOptions
   monitorCommands?: boolean;
   /** If present, the connection pool will be initialized with minSize connections, and will never dip below minSize connections */
   minSize?: number;
-  /** Determines whether or not to use the new url parser. Enables the new, spec-compliant, url parser shipped in the core driver. This url parser fixes a number of problems with the original parser, and aims to outright replace that parser in the near future. Defaults to true, and must be explicitly set to false to use the legacy url parser. */
-  useNewUrlParser?: boolean;
-  /** Enables the new unified topology layer */
-  useUnifiedTopology?: boolean;
   /** Optionally enable client side auto encryption */
   autoEncryption?: AutoEncryptionOptions;
   /** Allows a wrapping driver to amend the client metadata generated by the driver to include information about the wrapping driver */
@@ -274,7 +271,7 @@ export class MongoClient extends EventEmitter implements OperationParent {
    * The consolidate, parsed, transformed and merged options.
    * @internal
    */
-  options: MongoOptions;
+  options?: MongoOptions;
 
   // debugging
   originalUri;
@@ -292,7 +289,7 @@ export class MongoClient extends EventEmitter implements OperationParent {
     this.originalUri = url;
     this.originalOptions = options;
 
-    this.options = parseOptions(url, options);
+    // this.options = parseOptions(url, options);
 
     // The internal state
     this.s = {
