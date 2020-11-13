@@ -6,7 +6,7 @@ import { W, WriteConcern } from './write_concern';
 
 import type { ConnectionOptions as TLSConnectionOptions } from 'tls';
 import type { TcpSocketConnectOpts as ConnectionOptions } from 'net';
-import type { BSONSerializeOptions, Document } from './bson';
+import { BSONSerializeOptions, Document, ObjectId } from './bson';
 import { MongoParseError } from './error';
 import { URL } from 'url';
 import { AuthMechanismEnum } from './cmap/auth/defaultAuthProviders';
@@ -30,12 +30,9 @@ export interface MongoOptions
         | 'connectTimeoutMS'
         | 'dbName'
         | 'directConnection'
-        | 'domainsEnabled'
         | 'driverInfo'
         | 'forceServerObjectId'
         | 'gssapiServiceName'
-        | 'ha'
-        | 'haInterval'
         | 'heartbeatFrequencyMS'
         | 'keepAlive'
         | 'keepAliveInitialDelay'
@@ -169,15 +166,67 @@ function toRecord(value: string): Record<string, any> {
   return record;
 }
 
-const defaultOptions = new Map<string, unknown>([
-  ['dbName', 'test'],
-  ['socketTimeoutMS', 0],
-  ['readPreference', ReadPreference.primary]
-  // TODO: add more
-]);
+const defaultOptions = new Map<string, unknown>(
+  ([
+    ['readPreference', ReadPreference.primary],
+    ['autoEncryption', {}],
+    ['compression', 'none'],
+    ['compressors', 'none'],
+    ['connectTimeoutMS', 30000],
+    ['dbName', 'test'],
+    ['directConnection', false],
+    ['driverInfo', {}],
+    ['forceServerObjectId', false],
+    ['gssapiServiceName', undefined],
+    ['heartbeatFrequencyMS', 10000],
+    ['keepAlive', true],
+    ['keepAliveInitialDelay', 120000],
+    ['localThresholdMS', 0],
+    ['logger', new Logger('MongoClient')],
+    ['maxIdleTimeMS', 0],
+    ['maxPoolSize', 100],
+    ['minPoolSize', 0],
+    ['monitorCommands', false],
+    ['noDelay', true],
+    ['numberOfRetries', 5],
+    [
+      'pkFactory',
+      {
+        createPk() {
+          // We prefer not to rely on ObjectId having a createPk method
+          return new ObjectId();
+        }
+      }
+    ],
+    [
+      'createPk',
+      function createPk() {
+        // We prefer not to rely on ObjectId having a createPk method
+        return new ObjectId();
+      }
+    ],
+    ['promiseLibrary', undefined],
+    ['raw', false],
+    ['reconnectInterval', 0],
+    ['reconnectTries', 0],
+    ['replicaSet', undefined],
+    ['retryReads', true],
+    ['retryWrites', true],
+    ['serverSelectionTimeoutMS', 30000],
+    ['serverSelectionTryOnce', false],
+    ['socketTimeoutMS', 0],
+    ['tls', false],
+    ['tlsAllowInvalidCertificates', false],
+    ['tlsAllowInvalidHostnames', false],
+    ['tlsInsecure', false],
+    ['waitQueueMultiple', 1],
+    ['waitQueueTimeoutMS', 0],
+    ['zlibCompressionLevel', 0]
+  ] as [string, any][]).map(([k, v]) => [k.toLowerCase(), v])
+);
 
 export function parseOptions(
-  uri: string,
+  uri = 'mongodb://localhost:27017',
   options: MongoClientOptions = {}
 ): Readonly<MongoOptions> {
   const { url, hosts, srv } = parseURI(uri);
@@ -186,7 +235,7 @@ export function parseOptions(
   mongoOptions.hosts = hosts;
   mongoOptions.srv = srv;
 
-  const urlOptions = new Map();
+  const urlOptions = new Map<string, any>();
   for (const key of url.searchParams.keys()) {
     const loweredKey = key.toLowerCase();
     if (urlOptions.has(loweredKey)) {
@@ -202,11 +251,11 @@ export function parseOptions(
 
   const allOptions = new Map();
 
-  const allKeys = new Set([
-    ...urlOptions.keys(),
-    ...objectOptions.keys(),
-    ...defaultOptions.keys()
-  ]);
+  const allKeys = new Set(
+    [...urlOptions.keys(), ...objectOptions.keys(), ...defaultOptions.keys()].map(s =>
+      s.toLowerCase()
+    )
+  );
 
   for (const key of allKeys) {
     const values = [];
@@ -245,6 +294,9 @@ export function parseOptions(
         mongoOptions[name] = getUint(name, values[0]);
         break;
       case 'string':
+        if (values[0] === undefined) {
+          break;
+        }
         mongoOptions[name] = String(values[0]);
         break;
       case 'record':
@@ -333,7 +385,7 @@ export const OPTIONS: Record<keyof MongoClientOptions, OptionDescriptor> = {
     }
   },
   autoEncryption: {
-    type: 'record'
+    type: 'asIs'
   },
   checkKeys: {
     type: 'boolean'
@@ -383,22 +435,17 @@ export const OPTIONS: Record<keyof MongoClientOptions, OptionDescriptor> = {
   },
   createPk: {
     rename: 'pkFactory',
-    transform({ values: [value] }): PkFactory {
+    transform({ values: [value] }) {
       if (typeof value === 'function') {
-        return { createPk: value } as PkFactory;
+        return { createPk: value };
       }
-      throw new TypeError(
-        `Option pkFactory must be an object with a createPk function, got ${value}`
-      );
+      throw new TypeError(`Option createPk must be a function, got ${value}`);
     }
   } as OptionDescriptor,
   dbName: {
     type: 'string'
   },
   directConnection: {
-    type: 'boolean'
-  },
-  domainsEnabled: {
     type: 'boolean'
   },
   driverInfo: {
@@ -433,12 +480,6 @@ export const OPTIONS: Record<keyof MongoClientOptions, OptionDescriptor> = {
   },
   gssapiServiceName: {
     type: 'string'
-  },
-  ha: {
-    type: 'boolean'
-  },
-  haInterval: {
-    type: 'uint'
   },
   heartbeatFrequencyMS: {
     type: 'uint'
@@ -538,7 +579,6 @@ export const OPTIONS: Record<keyof MongoClientOptions, OptionDescriptor> = {
     }
   } as OptionDescriptor,
   pkFactory: {
-    rename: 'createPk',
     transform({ values: [value] }): PkFactory {
       if (isRecord(value) && 'createPk' in value && typeof value.createPk === 'function') {
         return value as PkFactory;

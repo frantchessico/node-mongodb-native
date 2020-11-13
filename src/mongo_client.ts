@@ -167,10 +167,6 @@ export interface MongoClientOptions
   reconnectTries?: number;
   /** Server will wait number of milliseconds between retries */
   reconnectInterval?: number;
-  /** Control if high availability monitoring runs for Replicaset or Mongos proxies */
-  ha?: boolean;
-  /** The High availability period for replicaset inquiry */
-  haInterval?: number;
   /** Force server to assign `_id` values instead of driver */
   forceServerObjectId?: boolean;
   /** Return document results as raw BSON buffers */
@@ -185,10 +181,6 @@ export interface MongoClientOptions
   loggerLevel?: LogLevel;
   /** Custom logger object */
   logger?: Logger;
-  /** Enable the wrapping of the callback in the current domain, disabled by default to avoid perf hit */
-  domainsEnabled?: boolean;
-  /** Validate MongoClient passed in options for correctness */
-  validateOptions?: boolean;
   /** The auth settings for when connection to server. */
   auth?: Auth;
   /** Type of compression to use?: snappy or zlib */
