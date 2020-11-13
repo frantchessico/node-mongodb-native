@@ -9,7 +9,7 @@ import type { Topology } from '../sdam/topology';
 import type { ClientSession } from '../sessions';
 import { formatSort, Sort, SortDirection } from '../sort';
 import type { Callback, MongoDBNamespace } from '../utils';
-import { AbstractCursor } from './abstract_cursor';
+import { AbstractCursor, assertUninitialized } from './abstract_cursor';
 
 /** @internal */
 const kFilter = Symbol('filter');
@@ -50,7 +50,6 @@ export class FindCursor extends AbstractCursor {
 
   /** @internal */
   _initialize(session: ClientSession | undefined, callback: Callback<ExecutionResult>): void {
-    this[kBuiltOptions] = Object.freeze(this[kBuiltOptions]);
     const findOperation = new FindOperation(undefined, this.namespace, this[kFilter], {
       ...this[kBuiltOptions], // NOTE: order matters here, we may need to refine this
       ...this.cursorOptions,
@@ -143,6 +142,7 @@ export class FindCursor extends AbstractCursor {
 
   /** Set the cursor query */
   filter(filter: Document): this {
+    assertUninitialized(this);
     this[kFilter] = filter;
     return this;
   }
@@ -153,6 +153,7 @@ export class FindCursor extends AbstractCursor {
    * @param hint - If specified, then the query system will only consider plans using the hinted index.
    */
   hint(hint: Hint): this {
+    assertUninitialized(this);
     this[kBuiltOptions].hint = hint;
     return this;
   }
@@ -163,6 +164,7 @@ export class FindCursor extends AbstractCursor {
    * @param min - Specify a $min value to specify the inclusive lower bound for a specific index in order to constrain the results of find(). The $min specifies the lower bound for all keys of a specific index in order.
    */
   min(min: number): this {
+    assertUninitialized(this);
     this[kBuiltOptions].min = min;
     return this;
   }
@@ -173,6 +175,7 @@ export class FindCursor extends AbstractCursor {
    * @param max - Specify a $max value to specify the exclusive upper bound for a specific index in order to constrain the results of find(). The $max specifies the upper bound for all keys of a specific index in order.
    */
   max(max: number): this {
+    assertUninitialized(this);
     this[kBuiltOptions].max = max;
     return this;
   }
@@ -185,6 +188,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - the returnKey value.
    */
   returnKey(value: boolean): this {
+    assertUninitialized(this);
     this[kBuiltOptions].returnKey = value;
     return this;
   }
@@ -195,6 +199,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - The $showDiskLoc option has now been deprecated and replaced with the showRecordId field. $showDiskLoc will still be accepted for OP_QUERY stye find.
    */
   showRecordId(value: boolean): this {
+    assertUninitialized(this);
     this[kBuiltOptions].showRecordId = value;
     return this;
   }
@@ -206,6 +211,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - The modifier value.
    */
   addQueryModifier(name: string, value: string | boolean | number | Document): this {
+    assertUninitialized(this);
     if (name[0] !== '$') {
       throw new MongoError(`${name} is not a valid query modifier`);
     }
@@ -268,6 +274,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - The comment attached to this query.
    */
   comment(value: string): this {
+    assertUninitialized(this);
     this[kBuiltOptions].comment = value;
     return this;
   }
@@ -278,6 +285,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - Number of milliseconds to wait before aborting the tailed query.
    */
   maxAwaitTimeMS(value: number): this {
+    assertUninitialized(this);
     if (typeof value !== 'number') {
       throw new MongoError('maxAwaitTimeMS must be a number');
     }
@@ -292,6 +300,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - Number of milliseconds to wait before aborting the query.
    */
   maxTimeMS(value: number): this {
+    assertUninitialized(this);
     if (typeof value !== 'number') {
       throw new MongoError('maxTimeMS must be a number');
     }
@@ -306,6 +315,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - The field projection object.
    */
   project(value: Document): this {
+    assertUninitialized(this);
     this[kBuiltOptions].projection = value;
     return this;
   }
@@ -317,6 +327,7 @@ export class FindCursor extends AbstractCursor {
    * @param direction - The direction of the sorting (1 or -1).
    */
   sort(sort: Sort | string, direction?: SortDirection): this {
+    assertUninitialized(this);
     if (this[kBuiltOptions].tailable) {
       throw new MongoError('Tailable cursor does not support sorting');
     }
@@ -331,6 +342,7 @@ export class FindCursor extends AbstractCursor {
    * @param value - The cursor collation options (MongoDB 3.4 or higher) settings for update operation (see 3.4 documentation for available fields).
    */
   collation(value: CollationOptions): this {
+    assertUninitialized(this);
     this[kBuiltOptions].collation = value;
     return this;
   }
@@ -341,12 +353,13 @@ export class FindCursor extends AbstractCursor {
    * @param value - The limit for the cursor query.
    */
   limit(value: number): this {
+    assertUninitialized(this);
     if (this[kBuiltOptions].tailable) {
       throw new MongoError('Tailable cursor does not support limit');
     }
 
     if (typeof value !== 'number') {
-      throw new MongoError('limit requires an integer');
+      throw new TypeError('limit requires an integer');
     }
 
     this[kBuiltOptions].limit = value;
@@ -359,12 +372,13 @@ export class FindCursor extends AbstractCursor {
    * @param value - The skip for the cursor query.
    */
   skip(value: number): this {
+    assertUninitialized(this);
     if (this[kBuiltOptions].tailable) {
       throw new MongoError('Tailable cursor does not support skip');
     }
 
     if (typeof value !== 'number') {
-      throw new MongoError('skip requires an integer');
+      throw new TypeError('skip requires an integer');
     }
 
     this[kBuiltOptions].skip = value;
